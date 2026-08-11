@@ -1459,7 +1459,9 @@ function PvpMode() {
   const [myTeam, setMyTeam] = useState({});     // roleId -> {character, roleId}
   const [myCode, setMyCode] = useState("");
   const [copied, setCopied] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
   const [pasteResult, setPasteResult] = useState("");
+  const [fromLink, setFromLink] = useState(false); // did opponent arrive via a challenge link?
 
   const [seed] = useState(() => (Math.random()*1e9)|0);
   const [current, setCurrent] = useState(null);
@@ -1467,10 +1469,35 @@ function PvpMode() {
   const [rerollsUsed, setRerollsUsed] = useState(0);
   const { spinning, reelFace, run } = useReel(seed);
 
+  // On mount: if the URL carries a challenge (?vs=CODE), auto-load the opponent
+  // and drop the player straight into building their team.
+  React.useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const vs = params.get("vs");
+      if (vs) {
+        const res = decodeTeam(vs.trim());
+        if (!res.error) {
+          setOppTeam(res.team); setOppCode(vs.trim()); setFromLink(true); setStage("build");
+        } else {
+          setOppError(res.error);
+        }
+      }
+    } catch (e) {}
+  }, []);
+
   const takenIds = Object.values(myTeam).map((m) => m.character.id);
   const filledCount = Object.keys(myTeam).length;
   const allFilled = filledCount === ROLES.length;
   const rerollsLeft = MAX_REROLLS - rerollsUsed;
+
+  // Build a full shareable challenge URL from a team code.
+  function challengeLink(code) {
+    try {
+      const base = window.location.origin + window.location.pathname;
+      return `${base}?vs=${code}`;
+    } catch (e) { return code; }
+  }
 
   function spin() {
     if (current || allFilled) return;
@@ -1501,14 +1528,19 @@ function PvpMode() {
   }
 
   function tryDecodeOpponent() {
-    const res = decodeTeam(oppCode.trim());
+    // accept either a raw code OR a pasted challenge link
+    let val = oppCode.trim();
+    const m = val.match(/[?&]vs=([^&\s]+)/);
+    if (m) val = decodeURIComponent(m[1]);
+    const res = decodeTeam(val);
     if (res.error) { setOppError(res.error); setOppTeam(null); return false; }
     setOppError(""); setOppTeam(res.team); return true;
   }
 
   function reset() {
-    setStage("menu"); setOppCode(""); setOppTeam(null); setOppError("");
+    setStage("menu"); setOppCode(""); setOppTeam(null); setOppError(""); setFromLink(false);
     setMyTeam({}); setMyCode(""); setCurrent(null); setSpinCount(0); setRerollsUsed(0); setPasteResult("");
+    try { window.history.replaceState({}, "", window.location.pathname); } catch (e) {}
   }
 
   // ── MENU: choose host or challenge ──
@@ -1623,29 +1655,43 @@ function PvpMode() {
   const tie = result && result.winner === "tie";
 
   function copyMyCode(){ navigator.clipboard?.writeText(myCode).then(()=>{ setCopied(true); setTimeout(()=>setCopied(false),1800); }); }
+  function copyMyLink(){ navigator.clipboard?.writeText(challengeLink(myCode)).then(()=>{ setLinkCopied(true); setTimeout(()=>setLinkCopied(false),1800); }); }
 
   return (
     <div className="tIn" style={{ maxWidth:680, margin:"0 auto" }}>
       {/* My code to share */}
       <div style={{ borderRadius:14, padding:20, marginBottom:18, border:"1px solid rgba(168,85,247,0.4)", background:"rgba(168,85,247,0.08)" }}>
-        <div className="c" style={{ fontSize:12, textTransform:"uppercase", letterSpacing:"0.2em", color:"#c084fc", fontWeight:700, marginBottom:8 }}>Your team code — send it to a friend</div>
+        <div className="c" style={{ fontSize:12, textTransform:"uppercase", letterSpacing:"0.2em", color:"#c084fc", fontWeight:700, marginBottom:8 }}>Challenge link — send it to a friend</div>
         <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-          <code style={{ flex:1, padding:"12px 14px", borderRadius:8, background:"rgba(0,0,0,0.4)", border:"1px solid rgba(255,255,255,0.14)", color:"#f5f5f4", fontSize:18, letterSpacing:"0.1em", fontFamily:"monospace", overflowX:"auto" }}>{myCode}</code>
-          <button onClick={copyMyCode} className="a" style={{ padding:"12px 18px", borderRadius:8, background:"#a855f7", color:"#fff", border:"none", cursor:"pointer", fontSize:15, flexShrink:0 }}>
-            {copied?"✓":"COPY"}
+          <div style={{ flex:1, padding:"12px 14px", borderRadius:8, background:"rgba(0,0,0,0.4)", border:"1px solid rgba(255,255,255,0.14)", color:"#c4b5fd", fontSize:13, fontFamily:"monospace", overflowX:"auto", whiteSpace:"nowrap" }}>{challengeLink(myCode)}</div>
+          <button onClick={copyMyLink} className="a" style={{ padding:"12px 18px", borderRadius:8, background:"#a855f7", color:"#fff", border:"none", cursor:"pointer", fontSize:15, flexShrink:0 }}>
+            {linkCopied?"✓ COPIED":"COPY LINK"}
           </button>
         </div>
+        <div className="c" style={{ fontSize:12, color:"#a8a29e", marginTop:8 }}>
+          When they open it, they'll build their team and the match resolves instantly — no codes to paste.
+        </div>
+        {/* raw code fallback */}
+        <details style={{ marginTop:12 }}>
+          <summary className="c" style={{ fontSize:12, color:"#78716c", cursor:"pointer", letterSpacing:"0.05em" }}>Prefer a plain code instead?</summary>
+          <div style={{ display:"flex", gap:8, alignItems:"center", marginTop:8 }}>
+            <code style={{ flex:1, padding:"10px 12px", borderRadius:8, background:"rgba(0,0,0,0.4)", border:"1px solid rgba(255,255,255,0.14)", color:"#f5f5f4", fontSize:16, letterSpacing:"0.1em", fontFamily:"monospace", overflowX:"auto" }}>{myCode}</code>
+            <button onClick={copyMyCode} className="c" style={{ padding:"10px 16px", borderRadius:8, background:"rgba(255,255,255,0.08)", color:"#e7e5e4", border:"1px solid rgba(255,255,255,0.14)", cursor:"pointer", fontSize:14, flexShrink:0 }}>
+              {copied?"✓":"COPY"}
+            </button>
+          </div>
+        </details>
       </div>
 
       {/* If no opponent yet, offer to paste one */}
       {!oppTeam && (
         <div style={{ borderRadius:14, padding:20, marginBottom:18, border:"1px solid rgba(255,255,255,0.12)", background:"rgba(255,255,255,0.02)" }}>
           <div className="c" style={{ fontSize:13, color:"#a8a29e", marginBottom:10 }}>
-            Waiting on your opponent. Paste their code here to see who wins — or send yours and let them run the match.
+            Waiting on your opponent. Paste their code or challenge link here to see who wins — or send yours and let them run the match.
           </div>
           <div style={{ display:"flex", gap:8 }}>
             <input value={oppCode} onChange={(e)=>{ setOppCode(e.target.value); setOppError(""); }}
-              placeholder="Paste opponent's code…" className="c"
+              placeholder="Paste opponent's code or link…" className="c"
               style={{ flex:1, padding:"10px 12px", borderRadius:8, background:"rgba(255,255,255,0.05)", border:`1px solid ${oppError?"#ef4444":"rgba(255,255,255,0.14)"}`, color:"#f5f5f4", fontSize:14, outline:"none" }} />
             <button onClick={tryDecodeOpponent} className="c" style={{ padding:"10px 18px", borderRadius:8, background:"#a855f7", color:"#fff", border:"none", cursor:"pointer", fontWeight:700, fontSize:14 }}>REVEAL</button>
           </div>
