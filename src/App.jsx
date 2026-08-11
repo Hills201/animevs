@@ -208,7 +208,7 @@ function fittedRating(character, roleId) {
 const BUDGET = 32;
 const PICKS = 5;
 const DRAW_SIZE = 5;
-const MAX_REROLLS = 1;
+const MAX_REROLLS = 3;
 
 // ─── COUNTERS (team-level) ──────────────────────────────────────────────────
 const COUNTERS = [
@@ -809,6 +809,7 @@ function SpinMode() {
   const [seed] = useState(() => (Math.random()*1e9)|0);
   const [team, setTeam] = useState({});          // roleId -> {character, roleId}
   const [spinCount, setSpinCount] = useState(0);
+  const [rerollsUsed, setRerollsUsed] = useState(0);
   const [current, setCurrent] = useState(null);
   const [phase, setPhase] = useState("play");
   const { spinning, reelFace, run } = useReel(seed);
@@ -816,10 +817,22 @@ function SpinMode() {
   const takenIds = Object.values(team).map((m) => m.character.id);
   const filledCount = Object.keys(team).length;
   const allFilled = filledCount === ROLES.length;
+  const rerollsLeft = MAX_REROLLS - rerollsUsed;
 
   function spin() {
     if (current || allFilled) return;
     const pool = CHARACTERS.filter((c) => !takenIds.includes(c.id));
+    run(pool, () => {
+      const chosen = drawFrom(pool, 1, seed ^ (spinCount*2654435761) ^ (Date.now() & 0xffff))[0];
+      setCurrent(chosen); setSpinCount((n) => n + 1);
+    });
+  }
+  function discardAndReroll() {
+    if (!current || spinning) return;
+    if (rerollsUsed >= MAX_REROLLS) return;       // hard cap on discards
+    const pool = CHARACTERS.filter((c) => !takenIds.includes(c.id));
+    setRerollsUsed((r) => r + 1);
+    setCurrent(null);
     run(pool, () => {
       const chosen = drawFrom(pool, 1, seed ^ (spinCount*2654435761) ^ (Date.now() & 0xffff))[0];
       setCurrent(chosen); setSpinCount((n) => n + 1);
@@ -830,7 +843,7 @@ function SpinMode() {
     setTeam((t) => ({ ...t, [roleId]: { character: current, roleId } }));
     setCurrent(null);
   }
-  function reset() { setTeam({}); setCurrent(null); setSpinCount(0); setPhase("play"); }
+  function reset() { setTeam({}); setCurrent(null); setSpinCount(0); setRerollsUsed(0); setPhase("play"); }
 
   if (phase === "done") return <ClimbResult team={ROLES.map((r)=>team[r.id])} onReplay={reset} replayLabel="NEW SPIN" />;
 
@@ -873,9 +886,12 @@ function SpinMode() {
         {allFilled ? "TEAM FULL" : current ? "PLACE FIRST" : spinning ? "SPINNING…" : "SPIN"}
       </button>
       {current && (
-        <button onClick={() => setCurrent(null)} className="c ghostBtn"
-          style={{ marginTop:10, width:"100%", textTransform:"uppercase", letterSpacing:"0.15em", fontSize:13, fontWeight:700, padding:"10px", borderRadius:10, background:"transparent", border:`1px solid ${RED}66`, color:RED, cursor:"pointer" }}>
-          ↻ Discard & spin again
+        <button onClick={discardAndReroll} disabled={rerollsUsed>=MAX_REROLLS || spinning}
+          className={rerollsUsed>=MAX_REROLLS?"":"c ghostBtn"}
+          style={{ marginTop:10, width:"100%", textTransform:"uppercase", letterSpacing:"0.15em", fontSize:13, fontWeight:700, padding:"10px", borderRadius:10, background:"transparent",
+            border: rerollsUsed>=MAX_REROLLS?"1px solid rgba(255,255,255,0.08)":`1px solid ${RED}66`,
+            color: rerollsUsed>=MAX_REROLLS?"#57534e":RED, cursor:(rerollsUsed>=MAX_REROLLS||spinning)?"not-allowed":"pointer" }}>
+          {rerollsUsed>=MAX_REROLLS ? "No rerolls left — place this fighter" : `↻ Discard & reroll · ${rerollsLeft} left`}
         </button>
       )}
     </>
@@ -888,7 +904,7 @@ function SpinMode() {
       allFilled={allFilled} onClimb={() => setPhase("done")}
       reelArea={reelArea} belowReel={belowReel}
       filledCount={filledCount}
-      footNote={`Spins used: ${spinCount} · Roles filled: ${filledCount}/${ROLES.length}`}
+      footNote={`Rerolls left: ${rerollsLeft}/${MAX_REROLLS} · Roles filled: ${filledCount}/${ROLES.length}`}
     />
   );
 }
@@ -913,34 +929,45 @@ function DraftMode() {
   const filledCount = Object.keys(team).length;
   const allFilled = filledCount === ROLES.length;
 
+  const MIN_COST = Math.min(...CHARACTERS.map((c) => c.cost));
+  function affordableCost(currentPlacedCount, spentOverride) {
+    const slotsLeftAfterThis = ROLES.length - currentPlacedCount - 1;
+    const reserve = slotsLeftAfterThis * MIN_COST;
+    const spent = spentOverride !== undefined ? spentOverride : placed.reduce((s,x)=>s+x.cost,0);
+    return (BUDGET - spent) - reserve;
+  }
+  // Draw 5 options but GUARANTEE at least one is affordable, so the player can
+  // always make a legal pick — no softlock, no need for free rerolls.
+  function drawAffordable(pool, drawSeed) {
+    const cap = affordableCost(Object.keys(team).length);
+    let opts = drawFrom(pool, DRAW_SIZE, drawSeed);
+    if (!opts.some((c) => c.cost <= cap)) {
+      // none affordable: swap the priciest option for the cheapest affordable fighter in the pool
+      const affordable = pool.filter((c) => c.cost <= cap).sort((a,b)=>a.cost-b.cost);
+      if (affordable.length) {
+        opts = [...opts].sort((a,b)=>b.cost-a.cost);
+        opts[0] = affordable[0];
+      }
+    }
+    return opts;
+  }
+
   function spin() {
     if (current || options || allFilled) return;
     const pool = CHARACTERS.filter((c) => !takenIds.includes(c.id));
     run(pool, () => {
-      const opts = drawFrom(pool, DRAW_SIZE, seed ^ (spinCount*2654435761) ^ (rerollNonce*40503));
-      setOptions(opts); setSpinCount((n)=>n+1);
+      setOptions(drawAffordable(pool, seed ^ (spinCount*2654435761) ^ (rerollNonce*40503)));
+      setSpinCount((n)=>n+1);
     });
   }
   function reroll() {
-    if (!options) return;
-    if (rerollsUsed>=MAX_REROLLS) return;
+    if (!options || spinning) return;
+    if (rerollsUsed >= MAX_REROLLS) return;      // hard cap: exactly 1 reroll, no exceptions
     const pool = CHARACTERS.filter((c) => !takenIds.includes(c.id));
-    setRerollsUsed(rerollsUsed+1);
-    const n = rerollNonce+1; setRerollNonce(n);
-    run(pool, () => setOptions(drawFrom(pool, DRAW_SIZE, seed ^ (spinCount*2654435761) ^ (n*40503))));
-  }
-  function forceReroll() { // free reroll when no option is affordable (never consumes allowance)
-    const pool = CHARACTERS.filter((c) => !takenIds.includes(c.id));
-    const n = rerollNonce+1; setRerollNonce(n);
-    run(pool, () => setOptions(drawFrom(pool, DRAW_SIZE, seed ^ (spinCount*2654435761) ^ (n*40503) ^ 0x5bd1e995)));
-  }
-  // Minimum you must keep in reserve to afford the cheapest fighter for every
-  // role slot still empty AFTER this pick. Prevents overspending into a dead end.
-  const MIN_COST = Math.min(...CHARACTERS.map((c) => c.cost));
-  function affordableCost(currentPlacedCount) {
-    const slotsLeftAfterThis = ROLES.length - currentPlacedCount - 1;
-    const reserve = slotsLeftAfterThis * MIN_COST;
-    return (BUDGET - placed.reduce((s,x)=>s+x.cost,0)) - reserve;
+    const n = rerollNonce + 1;
+    setRerollsUsed((r) => r + 1);                 // functional update — no stale closure
+    setRerollNonce(n);
+    run(pool, () => setOptions(drawAffordable(pool, seed ^ (spinCount*2654435761) ^ (n*40503))));
   }
   function choose(c) {
     if (c.cost > affordableCost(Object.keys(team).length)) return; // reserve-aware guard
@@ -1051,20 +1078,15 @@ function DraftMode() {
           {allFilled ? "TEAM FULL" : spinning ? "SPINNING…" : "SPIN"}
         </button>
       )}
-      {options && (() => {
-        const noneAffordable = options.every((c) => c.cost > maxAffordable);
-        const canReroll = rerollsUsed < MAX_REROLLS || noneAffordable; // free reroll if truly stuck
-        return (
-          <button onClick={() => { if (noneAffordable && rerollsUsed>=MAX_REROLLS) { forceReroll(); } else { reroll(); } }}
-            disabled={!canReroll || spinning} className={!canReroll?"":"ghostBtn"}
-            style={{ marginTop:12, width:"100%", textTransform:"uppercase", letterSpacing:"0.2em", fontSize:14, fontWeight:700, padding:"12px", borderRadius:10, background:"transparent",
-              border: !canReroll?"1px solid rgba(255,255,255,0.08)":`1px solid ${RED}66`,
-              color: !canReroll?"#57534e":RED, cursor:!canReroll?"not-allowed":"pointer" }}>
-            {noneAffordable ? "↻ None in budget — free reroll"
-              : rerollsUsed>=MAX_REROLLS ? "Reroll used" : "↻ Reroll these options · 1 use"}
-          </button>
-        );
-      })()}
+      {options && (
+        <button onClick={reroll} disabled={rerollsUsed>=MAX_REROLLS || spinning}
+          className={rerollsUsed>=MAX_REROLLS?"":"ghostBtn"}
+          style={{ marginTop:12, width:"100%", textTransform:"uppercase", letterSpacing:"0.2em", fontSize:14, fontWeight:700, padding:"12px", borderRadius:10, background:"transparent",
+            border: rerollsUsed>=MAX_REROLLS?"1px solid rgba(255,255,255,0.08)":`1px solid ${RED}66`,
+            color: rerollsUsed>=MAX_REROLLS?"#57534e":RED, cursor:(rerollsUsed>=MAX_REROLLS||spinning)?"not-allowed":"pointer" }}>
+          {rerollsUsed>=MAX_REROLLS ? "Rerolls used" : `↻ Reroll these options · ${MAX_REROLLS - rerollsUsed} left`}
+        </button>
+      )}
       {current && (
         <div className="c" style={{ marginTop:12, fontSize:12, color:"#a8a29e", textAlign:"center" }}>
           Place this fighter into a role to continue.
@@ -1304,15 +1326,28 @@ function PvpMode() {
   const [seed] = useState(() => (Math.random()*1e9)|0);
   const [current, setCurrent] = useState(null);
   const [spinCount, setSpinCount] = useState(0);
+  const [rerollsUsed, setRerollsUsed] = useState(0);
   const { spinning, reelFace, run } = useReel(seed);
 
   const takenIds = Object.values(myTeam).map((m) => m.character.id);
   const filledCount = Object.keys(myTeam).length;
   const allFilled = filledCount === ROLES.length;
+  const rerollsLeft = MAX_REROLLS - rerollsUsed;
 
   function spin() {
     if (current || allFilled) return;
     const pool = CHARACTERS.filter((c) => !takenIds.includes(c.id));
+    run(pool, () => {
+      const chosen = drawFrom(pool, 1, seed ^ (spinCount*2654435761) ^ (Date.now()&0xffff))[0];
+      setCurrent(chosen); setSpinCount((n)=>n+1);
+    });
+  }
+  function discardAndReroll() {
+    if (!current || spinning) return;
+    if (rerollsUsed >= MAX_REROLLS) return;
+    const pool = CHARACTERS.filter((c) => !takenIds.includes(c.id));
+    setRerollsUsed((r) => r + 1);
+    setCurrent(null);
     run(pool, () => {
       const chosen = drawFrom(pool, 1, seed ^ (spinCount*2654435761) ^ (Date.now()&0xffff))[0];
       setCurrent(chosen); setSpinCount((n)=>n+1);
@@ -1335,7 +1370,7 @@ function PvpMode() {
 
   function reset() {
     setStage("menu"); setOppCode(""); setOppTeam(null); setOppError("");
-    setMyTeam({}); setMyCode(""); setCurrent(null); setSpinCount(0); setPasteResult("");
+    setMyTeam({}); setMyCode(""); setCurrent(null); setSpinCount(0); setRerollsUsed(0); setPasteResult("");
   }
 
   // ── MENU: choose host or challenge ──
@@ -1417,9 +1452,11 @@ function PvpMode() {
           {allFilled?"TEAM FULL":current?"PLACE FIRST":spinning?"SPINNING…":"SPIN"}
         </button>
         {current && (
-          <button onClick={()=>setCurrent(null)} className="c"
-            style={{ marginTop:10, width:"100%", textTransform:"uppercase", letterSpacing:"0.15em", fontSize:13, fontWeight:700, padding:"10px", borderRadius:10, background:"transparent", border:"1px solid #a855f766", color:"#c084fc", cursor:"pointer" }}>
-            ↻ Discard & spin again
+          <button onClick={discardAndReroll} disabled={rerollsUsed>=MAX_REROLLS || spinning} className="c"
+            style={{ marginTop:10, width:"100%", textTransform:"uppercase", letterSpacing:"0.15em", fontSize:13, fontWeight:700, padding:"10px", borderRadius:10, background:"transparent",
+              border: rerollsUsed>=MAX_REROLLS?"1px solid rgba(255,255,255,0.08)":"1px solid #a855f766",
+              color: rerollsUsed>=MAX_REROLLS?"#57534e":"#c084fc", cursor:(rerollsUsed>=MAX_REROLLS||spinning)?"not-allowed":"pointer" }}>
+            {rerollsUsed>=MAX_REROLLS ? "No rerolls left — place this fighter" : `↻ Discard & reroll · ${rerollsLeft} left`}
           </button>
         )}
         {oppTeam && <div className="c" style={{ marginTop:12, fontSize:12, color:"#22c55e", textAlign:"center" }}>Opponent loaded — reveal when your team is full.</div>}
@@ -1433,7 +1470,7 @@ function PvpMode() {
           allFilled={allFilled} onClimb={lockIn}
           reelArea={reelArea} belowReel={belowReel}
           filledCount={filledCount}
-          footNote={`Roles filled: ${filledCount}/${ROLES.length}`}
+          footNote={`Rerolls left: ${rerollsLeft}/${MAX_REROLLS} · Roles filled: ${filledCount}/${ROLES.length}`}
         />
       </div>
     );
