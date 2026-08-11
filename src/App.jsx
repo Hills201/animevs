@@ -162,27 +162,29 @@ const ABILITY_TYPE_LIST = ["role_synergy","counter_immune","tag_projection","riv
 
 // ─── LADDER (10 rungs) ─────────────────────────────────────────────────────
 const LADDER = [
-  { rung:1, title:"The Sins", universe:"Seven Deadly Sins", team:["gowther-seven-deadly-sins","meliodas-seven-deadly-sins","ban-seven-deadly-sins","merlin-seven-deadly-sins","zeldris-seven-deadly-sins"], boost:0.72 },
-  { rung:2, title:"Devil Hunters", universe:"Chainsaw Man", team:["kishibe-chainsaw-man","katana-man-chainsaw-man","makima-chainsaw-man","denji-chainsaw-man","power-chainsaw-man"], boost:0.78 },
-  { rung:3, title:"U.A. Vanguard", universe:"My Hero Academia", team:["todoroki-my-hero-academia","dabi-my-hero-academia","overhaul-my-hero-academia","mirko-my-hero-academia","aizawa-my-hero-academia"], boost:0.84 },
-  { rung:4, title:"Jujutsu Sorcerers", universe:"Jujutsu Kaisen", team:["choso-jujutsu-kaisen","sukuna-jujutsu-kaisen","maki-jujutsu-kaisen","mahito-jujutsu-kaisen","gojo-satoru-jujutsu-kaisen"], boost:0.91 },
-  { rung:5, title:"The Hashira", universe:"Demon Slayer", team:["zenitsu-demon-slayer","giyu-demon-slayer","doma-demon-slayer","tanjiro-demon-slayer","muzan-demon-slayer"], boost:0.97 },
-  { rung:6, title:"Soul Reapers", universe:"Bleach", team:["toshiro-bleach","kisuke-bleach","yhwach-bleach","yoruichi-bleach","byakuya-bleach"], boost:1.03 },
-  { rung:7, title:"The Zodiacs", universe:"Hunter x Hunter", team:["biscuit-hunter-x-hunter","feitan-hunter-x-hunter","kurapika-hunter-x-hunter","neferpitou-hunter-x-hunter","chrollo-hunter-x-hunter"], boost:1.09 },
-  { rung:8, title:"The Kage", universe:"Naruto", team:["madara-naruto","obito-naruto","minato-naruto","pain-naruto","kakashi-naruto"], boost:1.16 },
-  { rung:9, title:"Gods of Destruction", universe:"Dragon Ball", team:["beerus-dragon-ball","vegeta-dragon-ball","piccolo-dragon-ball","jiren-dragon-ball","broly-dragon-ball"], boost:1.22 },
-  { rung:10, title:"The Yonko", universe:"One Piece", team:["kaido-one-piece","luffy-one-piece","shanks-one-piece","mihawk-one-piece","zoro-one-piece"], boost:1.28 },
+  { rung:1, title:"The Sins", universe:"Seven Deadly Sins", team:["escanor-seven-deadly-sins","meliodas-seven-deadly-sins","estarossa-seven-deadly-sins","zeldris-seven-deadly-sins","ban-seven-deadly-sins","merlin-seven-deadly-sins","gowther-seven-deadly-sins"], boost:0.684 },
+  { rung:2, title:"Devil Hunters", universe:"Chainsaw Man", team:["makima-chainsaw-man","kishibe-chainsaw-man","denji-chainsaw-man","katana-man-chainsaw-man","aki-chainsaw-man","power-chainsaw-man","reze-chainsaw-man"], boost:0.819 },
+  { rung:3, title:"U.A. Vanguard", universe:"My Hero Academia", team:["shigaraki-my-hero-academia","deku-my-hero-academia","endeavor-my-hero-academia","bakugo-my-hero-academia","todoroki-my-hero-academia","dabi-my-hero-academia","mirko-my-hero-academia"], boost:0.844 },
+  { rung:4, title:"Jujutsu Sorcerers", universe:"Jujutsu Kaisen", team:["sukuna-jujutsu-kaisen","gojo-satoru-jujutsu-kaisen","yuta-jujutsu-kaisen","geto-jujutsu-kaisen","mahito-jujutsu-kaisen","nanami-jujutsu-kaisen","hakari-jujutsu-kaisen"], boost:0.794 },
+  { rung:5, title:"The Hashira", universe:"Demon Slayer", team:["muzan-demon-slayer","kokushibo-demon-slayer","gyomei-demon-slayer","akaza-demon-slayer","tengen-demon-slayer","doma-demon-slayer","rengoku-demon-slayer"], boost:0.877 },
+  { rung:6, title:"Soul Reapers", universe:"Bleach", team:["aizen-bleach","yhwach-bleach","ichigo-bleach","ulquiorra-bleach","gremmy-bleach","kenpachi-bleach","toshiro-bleach"], boost:0.87 },
+  { rung:7, title:"The Zodiacs", universe:"Hunter x Hunter", team:["meruem-hunter-x-hunter","netero-hunter-x-hunter","chrollo-hunter-x-hunter","feitan-hunter-x-hunter","hisoka-hunter-x-hunter","gon-hunter-x-hunter","neferpitou-hunter-x-hunter"], boost:0.918 },
+  { rung:8, title:"The Kage", universe:"Naruto", team:["hashirama-naruto","madara-naruto","naruto-naruto","obito-naruto","minato-naruto","jiraiya-naruto","itachi-naruto"], boost:0.921 },
+  { rung:9, title:"Gods of Destruction", universe:"Dragon Ball", team:["beerus-dragon-ball","goku-dragon-ball","vegeta-dragon-ball","jiren-dragon-ball","gohan-dragon-ball","broly-dragon-ball","cell-dragon-ball"], boost:0.927 },
+  { rung:10, title:"The Yonko", universe:"One Piece", team:["kaido-one-piece","luffy-one-piece","shanks-one-piece","mihawk-one-piece","zoro-one-piece","doflamingo-one-piece","law-one-piece"], boost:1.022 },
 ];
 
 // ─── ROLES ─────────────────────────────────────────────────────────────────
 // Each role "wants" certain tags. A character that fits its role gains a bonus;
 // a poor fit takes a penalty. This is the draft-good-characters-into-good-roles layer.
 const ROLES = [
-  { id:"captain", name:"Captain", blurb:"Raw power",   wants:["melee","aura","range"],       color:"#ffb020" },
-  { id:"tank",    name:"Tank",    blurb:"Durability",  wants:["giant","barrier","melee"],    color:"#3b82f6" },
-  { id:"damage",  name:"Damage",  blurb:"Offense",     wants:["range","element","melee"],    color:"#ef4444" },
-  { id:"support", name:"Support", blurb:"Utility",     wants:["summon","mobility","barrier"],color:"#22c55e" },
-  { id:"healer",  name:"Healer",  blurb:"Sustain",     wants:["aura","element","summon"],    color:"#a855f7" },
+  { id:"captain",  name:"Captain",      blurb:"Raw power",   wants:["melee","aura","range"],       color:"#ffb020" },
+  { id:"vice",     name:"Vice-Captain", blurb:"Second-in-command", wants:["aura","melee","mobility"], color:"#f97316" },
+  { id:"tank",     name:"Tank",         blurb:"Durability",  wants:["giant","barrier","melee"],    color:"#3b82f6" },
+  { id:"damage",   name:"Damage",       blurb:"Offense",     wants:["range","element","melee"],    color:"#ef4444" },
+  { id:"support",  name:"Support",      blurb:"Utility",     wants:["summon","mobility","barrier"],color:"#22c55e" },
+  { id:"support2", name:"Support II",   blurb:"Utility",     wants:["summon","mobility","element"],color:"#14b8a6" },
+  { id:"healer",   name:"Healer",       blurb:"Sustain",     wants:["aura","element","summon"],    color:"#a855f7" },
 ];
 const roleById = (id) => ROLES.find((r) => r.id === id);
 
@@ -207,8 +209,8 @@ function fittedRating(character, roleId) {
   return Math.round(character.rating * roleFit(character, roleId).mult);
 }
 
-const BUDGET = 32;
-const PICKS = 5;
+const BUDGET = 46;
+const PICKS = 7;
 const DRAW_SIZE = 5;
 const MAX_REROLLS = 3;
 
@@ -377,13 +379,14 @@ function resolvePvP(teamA, teamB) {
 }
 
 // ─── TEAM CODEC (order-independent, checksummed) ────────────────────────────
-const CODEC_ROLES = ["captain","tank","damage","support","healer"];
+const CODEC_ROLES = ROLES.map((r) => r.id); // dynamic: all roles in order
+const SLOT_COUNT = CODEC_ROLES.length;
 const SORTED_IDS = CHARACTERS.map((c) => c.id).sort();
 function _b64url(bytes){ let bin=String.fromCharCode(...bytes); let s=btoa(bin); return s.replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,""); }
 function _unb64url(str){ str=str.replace(/-/g,"+").replace(/_/g,"/"); while(str.length%4)str+="="; const bin=atob(str); return [...bin].map((c)=>c.charCodeAt(0)); }
 function _checksum(str){ let h=0; for(const ch of str) h=(h*31+ch.charCodeAt(0))%36; return h.toString(36).toUpperCase(); }
 
-function encodeTeam(team){ // team: [{character, roleId}]
+function encodeTeam(team){ // team: [{character, roleId}] — 11 bits/slot (8 char + 3 role)
   const ordered = CODEC_ROLES.map((rid) => team.find((t) => t.roleId === rid));
   if (ordered.some((m) => !m)) return null;
   let bits = [];
@@ -395,17 +398,17 @@ function encodeTeam(team){ // team: [{character, roleId}]
   const bytes=[];
   for (let i=0;i<bits.length;i+=8){ let byte=0; for(let j=0;j<8;j++) byte=(byte<<1)|(bits[i+j]||0); bytes.push(byte); }
   const body=_b64url(bytes);
-  return "V1"+body+_checksum(body);
+  return "V2"+body+_checksum(body);
 }
 function decodeTeam(code){
   try{
-    if(!code || code.slice(0,2)!=="V1") return { error:"Not a valid team code" };
+    if(!code || code.slice(0,2)!=="V2") return { error: code && code.slice(0,2)==="V1" ? "That code is from an older version — teams are now 7 fighters" : "Not a valid team code" };
     const body=code.slice(2,-1), cs=code.slice(-1);
     if(_checksum(body)!==cs) return { error:"Code looks mistyped — check it and try again" };
     const bytes=_unb64url(body);
     let bits=[]; bytes.forEach((byte)=>{ for(let b=7;b>=0;b--) bits.push((byte>>b)&1); });
     const team=[];
-    for(let s=0;s<5;s++){
+    for(let s=0;s<SLOT_COUNT;s++){
       let ci=0; for(let b=0;b<8;b++) ci=(ci<<1)|bits[s*11+b];
       let ri=0; for(let b=0;b<3;b++) ri=(ri<<1)|bits[s*11+8+b];
       const id=SORTED_IDS[ci]; const character=byId(id);
@@ -758,7 +761,7 @@ function SpinStage({
               const member = team[role.id];
               const canPlace = activeChar && !member;
               return (
-                <div key={role.id} style={{ gridColumn: (i===4 ? "1 / -1" : "auto") }}>
+                <div key={role.id} style={{ gridColumn: (i === ROLES.length - 1 && ROLES.length % 2 === 1 ? "1 / -1" : "auto") }}>
                   <RoleSlot role={role} member={member} active={canPlace} disabled={!canPlace}
                     onClick={() => canPlace && onPlace(role.id)} />
                 </div>
