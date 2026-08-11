@@ -28,7 +28,7 @@ const CHARACTERS = [
   { id:"pain-naruto", name:"Pain", series:"Naruto", tier:"S", cost:8, rating:88, tags:["melee","range","mobility","summon","element","psychic","regen"], role:"vice", ability:{ name:"Titanic Frame", type:"role_synergy", x:5, role:"tank" } },
   { id:"tsunade-naruto", name:"Tsunade", series:"Naruto", tier:"S", cost:6, rating:93, tags:["melee","mobility","heal","regen","energy","aura","element"], role:"healer", ability:{ name:"Blinding Speed", type:"counter_immune", x:4, role:"healer" } },
   { id:"kakashi-naruto", name:"Kakashi", series:"Naruto", tier:"A", cost:7, rating:85, tags:["melee","range","mobility","element","speed","stealth"], role:"support", ability:{ name:"Guard Field", type:"adaptable", tag:"barrier" } },
-  { id:"gaara-naruto", name:"Gaara", series:"Naruto", tier:"A", cost:7, rating:83, tags:["range","barrier","element","energy","summon","transform"], role:"support", ability:{ name:"Guard Field", type:"aura_buff", tag:"barrier" } },
+  { id:"gaara-naruto", name:"Gaara", series:"Naruto", tier:"A", cost:7, rating:83, tags:["range","barrier","element","energy","summon","transform"], role:"support", ability:{ name:"Guard Field", type:"tag_projection", tag:"barrier" } },
   { id:"beerus-dragon-ball", name:"Beerus", series:"Dragon Ball", tier:"SS", cost:10, rating:97, tags:["giant","barrier"], role:"captain", ability:{ name:"Hakai", type:"counter_immune" } },
   { id:"goku-dragon-ball", name:"Goku", series:"Dragon Ball", tier:"SS", cost:10, rating:96, tags:["range","element"], role:"damage", ability:{ name:"Ultra Instinct", type:"clutch", x:8 } },
   { id:"vegeta-dragon-ball", name:"Vegeta", series:"Dragon Ball", tier:"S", cost:9, rating:91, tags:["giant","barrier"], role:"tank", ability:{ name:"Final Flash", type:"role_synergy", x:7, role:"damage" } },
@@ -99,14 +99,14 @@ const CHARACTERS = [
   { id:"endeavor-my-hero-academia", name:"Endeavor", series:"My Hero Academia", tier:"S", cost:8, rating:88, tags:["melee","range","element","mobility","speed","energy"], role:"captain", ability:{ name:"Guard Field", type:"tag_projection", tag:"barrier" } },
   { id:"bakugo-my-hero-academia", name:"Bakugo", series:"My Hero Academia", tier:"S", cost:8, rating:86, tags:["melee","range","element","aura","speed","energy","mobility"], role:"damage", ability:{ name:"Battle Aura", type:"aura_buff", x:4 } },
   { id:"todoroki-my-hero-academia", name:"Todoroki", series:"My Hero Academia", tier:"A", cost:7, rating:82, tags:["element","range","mobility","speed"], role:"support", ability:{ name:"Half-Cold Half-Hot", type:"tag_projection", tag:"element" } },
-  { id:"dabi-my-hero-academia", name:"Dabi", series:"My Hero Academia", tier:"A", cost:6, rating:80, tags:["range","element","mobility"], role:"damage", ability:{ name:"Guard Field", type:"overwhelm", tag:"barrier" } },
+  { id:"dabi-my-hero-academia", name:"Dabi", series:"My Hero Academia", tier:"A", cost:6, rating:80, tags:["range","element","mobility"], role:"damage", ability:{ name:"Guard Field", type:"tag_projection", tag:"barrier" } },
   { id:"mirko-my-hero-academia", name:"Mirko", series:"My Hero Academia", tier:"A", cost:5, rating:78, tags:["speed","mobility","melee","aura"], role:"damage", ability:{ name:"Guard Field", type:"rival_bonus", tag:"barrier", universe:"Tokyo Ghoul" } },
   { id:"aizawa-my-hero-academia", name:"Aizawa", series:"My Hero Academia", tier:"B", cost:4, rating:65, tags:["mobility","range","melee","stealth"], role:"support", ability:{ name:"Guard Field", type:"tag_projection", tag:"barrier" } },
   { id:"overhaul-my-hero-academia", name:"Overhaul", series:"My Hero Academia", tier:"B", cost:4, rating:64, tags:["melee","element","range"], role:"damage", ability:{ name:"Elemental Burst", type:"role_synergy", x:2, role:"damage" } },
   { id:"gran-torino-my-hero-academia", name:"Gran Torino", series:"My Hero Academia", tier:"B", cost:4, rating:65, tags:["range","speed","mobility","melee"], role:"support", ability:{ name:"Ranged Barrage", type:"role_synergy", x:3, role:"damage" } },
   { id:"eren-titan-attack-on-titan", name:"Eren (Titan)", series:"Attack on Titan", tier:"S", cost:9, rating:93, tags:["melee","aura","giant","mobility","range","transform","regen"], role:"captain", ability:{ name:"Battle Aura", type:"aura_buff", x:4 } },
   { id:"levi-attack-on-titan", name:"Levi", series:"Attack on Titan", tier:"S", cost:7, rating:85, tags:["melee","mobility","speed","stealth","aura"], role:"vice", ability:{ name:"Humanity's Strongest", type:"role_synergy", x:7, role:"damage" } },
-  { id:"zeke-attack-on-titan", name:"Zeke", series:"Attack on Titan", tier:"A", cost:5, rating:76, tags:["range","giant","regen","transform"], role:"vice", ability:{ name:"Guard Field", type:"role_synergy", tag:"barrier", role:"damage" } },
+  { id:"zeke-attack-on-titan", name:"Zeke", series:"Attack on Titan", tier:"A", cost:5, rating:76, tags:["range","giant","regen","transform"], role:"vice", ability:{ name:"Guard Field", type:"tag_projection", tag:"barrier" } },
   { id:"reiner-titan-attack-on-titan", name:"Reiner (Titan)", series:"Attack on Titan", tier:"A", cost:5, rating:76, tags:["range","mobility","transform","regen","giant"], role:"tank", ability:{ name:"Blinding Speed", type:"role_synergy", x:4, role:"tank" } },
   { id:"mikasa-attack-on-titan", name:"Mikasa", series:"Attack on Titan", tier:"B", cost:4, rating:72, tags:["melee","speed","stealth","range","mobility"], role:"damage", ability:{ name:"Fighting Spirit", type:"overwhelm", x:4 } },
   { id:"armin-attack-on-titan", name:"Armin", series:"Attack on Titan", tier:"A", cost:5, rating:76, tags:["melee","giant","range","regen","transform"], role:"tank", ability:{ name:"Elemental Burst", type:"role_synergy", x:4, role:"damage" } },
@@ -263,12 +263,13 @@ function fittedRatingWithAbility(member, ctx) {
   if (ab && ab.type === "adaptable" && fit.mult < 1) fit = { ...fit, mult: 1, label: "Adaptable", tone: "good" };
   let r = character.rating * fit.mult;
   if (!ab) return Math.round(r);
+  const ax = ab.x || 0; // guard: a missing bonus value must never poison the total
   // role_synergy
-  if (ab.type === "role_synergy" && ab.role === roleId) r += ab.x;
+  if (ab.type === "role_synergy" && ab.role === roleId) r += ax;
   // clutch: only on hard rungs
-  if (ab.type === "clutch" && ctx && ctx.rungNumber >= 6) r += ab.x;
+  if (ab.type === "clutch" && ctx && ctx.rungNumber >= 6) r += ax;
   // overwhelm: if this is the team's highest base rating
-  if (ab.type === "overwhelm" && ctx && ctx.isHighest) r += ab.x;
+  if (ab.type === "overwhelm" && ctx && ctx.isHighest) r += ax;
   return Math.round(r);
 }
 
@@ -283,7 +284,7 @@ function auraTargets(team) {
       [idx - 1, idx + 1].forEach((n) => {
         if (n >= 0 && n < order.length) {
           const rid = order[n];
-          bonusByRole[rid] = (bonusByRole[rid] || 0) + m.character.ability.x;
+          bonusByRole[rid] = (bonusByRole[rid] || 0) + (m.character.ability.x || 0);
         }
       });
     }
@@ -321,7 +322,7 @@ function squadScore(myTeam, oppChars, boost = 1, ctx = {}) {
   clean.forEach((m) => {
     const ab = m.character.ability;
     if (ab && ab.type === "rival_bonus" && ctx.universe === ab.universe) {
-      base += ab.x; abilityNotes.push(`${ab.name}`);
+      base += (ab.x || 0); abilityNotes.push(`${ab.name}`);
     }
   });
 
