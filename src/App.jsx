@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from "react";
+import { Analytics } from "@vercel/analytics/react";
 
 // ─── ROSTER (150) ───────────────────────────────────────────────────────────
 const CHARACTERS = [
@@ -463,7 +464,8 @@ export default function App() {
           {mode === "pvp" && <PvpMode />}
         </div>
       </div>
-    </div>
+    <Analytics />
+      </div>
   );
 }
 
