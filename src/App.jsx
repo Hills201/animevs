@@ -1,4 +1,6 @@
 import React, { useState, useMemo } from "react";
+import { Analytics } from "@vercel/analytics/react";
+import { SpeedInsights } from "@vercel/speed-insights/react";
 
 // ─── ROSTER (150) ───────────────────────────────────────────────────────────
 const CHARACTERS = [
@@ -463,6 +465,8 @@ export default function App() {
           {mode === "pvp" && <PvpMode />}
         </div>
       </div>
+      <Analytics />
+      <SpeedInsights />
     </div>
   );
 }
@@ -878,17 +882,19 @@ function SpinMode() {
 
   const belowReel = (
     <>
-      <button onClick={spin} disabled={spinning || allFilled || !!current} className="a redBtn"
-        style={{ marginTop:14, width:"100%", fontSize:26, letterSpacing:"0.05em", padding:"16px", borderRadius:12,
-          background:(spinning||allFilled||current)?"#44210f":RED, color:"#fff", border:"none",
-          cursor:(spinning||allFilled||current)?"not-allowed":"pointer",
-          boxShadow:(spinning||allFilled||current)?"none":"0 8px 30px -8px rgba(255,45,53,0.7)" }}>
-        {allFilled ? "TEAM FULL" : current ? "PLACE FIRST" : spinning ? "SPINNING…" : "SPIN"}
-      </button>
+      {!current && (
+        <button onClick={spin} disabled={spinning || allFilled} className="a redBtn"
+          style={{ marginTop:14, width:"100%", fontSize:26, letterSpacing:"0.05em", padding:"16px", borderRadius:12,
+            background:(spinning||allFilled)?"#44210f":RED, color:"#fff", border:"none",
+            cursor:(spinning||allFilled)?"not-allowed":"pointer",
+            boxShadow:(spinning||allFilled)?"none":"0 8px 30px -8px rgba(255,45,53,0.7)" }}>
+          {allFilled ? "TEAM FULL" : spinning ? "SPINNING…" : "SPIN"}
+        </button>
+      )}
       {current && (
         <button onClick={discardAndReroll} disabled={rerollsUsed>=MAX_REROLLS || spinning}
           className={rerollsUsed>=MAX_REROLLS?"":"c ghostBtn"}
-          style={{ marginTop:10, width:"100%", textTransform:"uppercase", letterSpacing:"0.15em", fontSize:13, fontWeight:700, padding:"10px", borderRadius:10, background:"transparent",
+          style={{ marginTop:14, width:"100%", textTransform:"uppercase", letterSpacing:"0.15em", fontSize:14, fontWeight:700, padding:"14px", borderRadius:12, background:"transparent",
             border: rerollsUsed>=MAX_REROLLS?"1px solid rgba(255,255,255,0.08)":`1px solid ${RED}66`,
             color: rerollsUsed>=MAX_REROLLS?"#57534e":RED, cursor:(rerollsUsed>=MAX_REROLLS||spinning)?"not-allowed":"pointer" }}>
           {rerollsUsed>=MAX_REROLLS ? "No rerolls left — place this fighter" : `↻ Discard & reroll · ${rerollsLeft} left`}
@@ -1445,15 +1451,17 @@ function PvpMode() {
     );
     const belowReel = (
       <>
-        <button onClick={spin} disabled={spinning||allFilled||!!current} className="a"
-          style={{ marginTop:14, width:"100%", fontSize:26, letterSpacing:"0.05em", padding:"16px", borderRadius:12,
-            background:(spinning||allFilled||current)?"#3a1a5c":"#a855f7", color:"#fff", border:"none",
-            cursor:(spinning||allFilled||current)?"not-allowed":"pointer" }}>
-          {allFilled?"TEAM FULL":current?"PLACE FIRST":spinning?"SPINNING…":"SPIN"}
-        </button>
+        {!current && (
+          <button onClick={spin} disabled={spinning||allFilled} className="a"
+            style={{ marginTop:14, width:"100%", fontSize:26, letterSpacing:"0.05em", padding:"16px", borderRadius:12,
+              background:(spinning||allFilled)?"#3a1a5c":"#a855f7", color:"#fff", border:"none",
+              cursor:(spinning||allFilled)?"not-allowed":"pointer" }}>
+            {allFilled?"TEAM FULL":spinning?"SPINNING…":"SPIN"}
+          </button>
+        )}
         {current && (
           <button onClick={discardAndReroll} disabled={rerollsUsed>=MAX_REROLLS || spinning} className="c"
-            style={{ marginTop:10, width:"100%", textTransform:"uppercase", letterSpacing:"0.15em", fontSize:13, fontWeight:700, padding:"10px", borderRadius:10, background:"transparent",
+            style={{ marginTop:14, width:"100%", textTransform:"uppercase", letterSpacing:"0.15em", fontSize:14, fontWeight:700, padding:"14px", borderRadius:12, background:"transparent",
               border: rerollsUsed>=MAX_REROLLS?"1px solid rgba(255,255,255,0.08)":"1px solid #a855f766",
               color: rerollsUsed>=MAX_REROLLS?"#57534e":"#c084fc", cursor:(rerollsUsed>=MAX_REROLLS||spinning)?"not-allowed":"pointer" }}>
             {rerollsUsed>=MAX_REROLLS ? "No rerolls left — place this fighter" : `↻ Discard & reroll · ${rerollsLeft} left`}
