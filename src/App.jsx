@@ -157,7 +157,10 @@ const CHARACTERS = [
 ];
 // CHARACTERS is mutable so the in-app editor can tune values for the session.
 const byId = (id) => CHARACTERS.find((c) => c.id === id);
-const ALL_TAGS = ["melee","range","mobility","barrier","element","giant","aura","summon"];
+const ALL_TAGS = ["melee","range","mobility","barrier","element","giant","aura","summon","speed","energy","stealth","psychic","regen","transform"];
+// Max tags a character may hold, by tier (higher tier = more versatile).
+const TIER_TAG_CAP = { SS:6, S:5, A:4, B:3, C:3 };
+const tagCapFor = (tier) => TIER_TAG_CAP[tier] || 3;
 const ABILITY_TYPE_LIST = ["role_synergy","counter_immune","tag_projection","rival_bonus","adaptable","clutch","aura_buff","overwhelm"];
 
 // ─── LADDER (10 rungs) ─────────────────────────────────────────────────────
@@ -222,6 +225,12 @@ const COUNTERS = [
   { win:"barrier", lose:"element", label:"Barrier > Element" },
   { win:"giant", lose:"melee", label:"Giant > Melee" },
   { win:"aura", lose:"barrier", label:"Aura > Barrier" },
+  { win:"speed", lose:"giant", label:"Speed > Giant" },
+  { win:"energy", lose:"barrier", label:"Energy > Barrier" },
+  { win:"stealth", lose:"summon", label:"Stealth > Summon" },
+  { win:"psychic", lose:"speed", label:"Psychic > Speed" },
+  { win:"regen", lose:"element", label:"Regen > Element" },
+  { win:"transform", lose:"stealth", label:"Transform > Stealth" },
 ];
 const COUNTER_BONUS = 15;
 const tagCount = (team, tag) => team.reduce((n, c) => n + (c.tags.includes(tag) ? 1 : 0), 0);
@@ -449,6 +458,9 @@ const TAG_STYLE = {
   mobility:{bg:"#0f3d2e",fg:"#6ee7b7",bd:"#34d399"}, barrier:{bg:"#5c4410",fg:"#fcd34d",bd:"#fbbf24"},
   element:{bg:"#3b1e5c",fg:"#c4b5fd",bd:"#a78bfa"}, giant:{bg:"#5c3410",fg:"#fdba74",bd:"#fb923c"},
   aura:{bg:"#5c1550",fg:"#f0abfc",bd:"#e879f9"}, summon:{bg:"#0f4a4a",fg:"#5eead4",bd:"#2dd4bf"},
+  speed:{bg:"#0c4a4e",fg:"#67e8f9",bd:"#22d3ee"}, energy:{bg:"#4a3410",fg:"#fde047",bd:"#facc15"},
+  stealth:{bg:"#1e293b",fg:"#cbd5e1",bd:"#94a3b8"}, psychic:{bg:"#4a1d4f",fg:"#f0abfc",bd:"#d946ef"},
+  regen:{bg:"#14432a",fg:"#86efac",bd:"#4ade80"}, transform:{bg:"#4a2410",fg:"#fdba74",bd:"#f97316"},
 };
 
 // ─── ROOT ───────────────────────────────────────────────────────────────────
@@ -1199,9 +1211,15 @@ function EditorMode() {
                   <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10, marginTop:12 }}>
                     <Field label="Tier">
                       <div style={{ display:"flex", gap:4 }}>
-                        {["S","A","B","C"].map((t) => (
-                          <button key={t} onClick={() => edit(c.id, { tier:t })}
-                            className="a" style={{ flex:1, padding:"6px 0", borderRadius:6, cursor:"pointer", fontSize:14,
+                        {["SS","S","A","B","C"].map((t) => (
+                          <button key={t} onClick={() => {
+                            // clamp tags to the new tier's cap when demoting
+                            const cap = tagCapFor(t);
+                            const patch = { tier:t };
+                            if (c.tags.length > cap) patch.tags = c.tags.slice(0, cap);
+                            edit(c.id, patch);
+                          }}
+                            className="a" style={{ flex:1, padding:"6px 0", borderRadius:6, cursor:"pointer", fontSize:13,
                               background: c.tier===t ? TIER_COLOR[t] : "rgba(255,255,255,0.05)",
                               color: c.tier===t ? "#0b0c10" : "#a8a29e", border:"1px solid rgba(255,255,255,0.12)" }}>{t}</button>
                         ))}
@@ -1219,17 +1237,19 @@ function EditorMode() {
                     </Field>
                   </div>
 
-                  {/* tags */}
-                  <Field label="Tags (max 3)">
+                  {/* tags — cap scales with tier */}
+                  <Field label={`Tags (${c.tags.length}/${tagCapFor(c.tier)} for ${c.tier}-tier)`}>
                     <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
                       {ALL_TAGS.map((t) => {
                         const on = c.tags.includes(t);
+                        const cap = tagCapFor(c.tier);
+                        const atCap = c.tags.length >= cap && !on;
                         return (
-                          <button key={t} onClick={() => {
-                            let next = on ? c.tags.filter((x) => x !== t) : (c.tags.length < 3 ? [...c.tags, t] : c.tags);
+                          <button key={t} disabled={atCap} onClick={() => {
+                            let next = on ? c.tags.filter((x) => x !== t) : (c.tags.length < cap ? [...c.tags, t] : c.tags);
                             if (next.length === 0) next = [t];
                             edit(c.id, { tags: next });
-                          }} style={{ cursor:"pointer", background:"transparent", border:"none", padding:0, opacity: on?1:0.4 }}>
+                          }} style={{ cursor: atCap?"not-allowed":"pointer", background:"transparent", border:"none", padding:0, opacity: on?1:(atCap?0.2:0.4) }}>
                             <Tag t={t} small />
                           </button>
                         );
