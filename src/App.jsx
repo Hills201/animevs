@@ -157,10 +157,10 @@ const CHARACTERS = [
 ];
 // CHARACTERS is mutable so the in-app editor can tune values for the session.
 const byId = (id) => CHARACTERS.find((c) => c.id === id);
-const ALL_TAGS = ["melee","range","mobility","barrier","element","giant","aura","summon","speed","energy","stealth","psychic","regen","transform"];
+const ALL_TAGS = ["melee","range","mobility","barrier","element","giant","aura","summon","speed","energy","stealth","psychic","regen","transform","heal"];
 // Max tags a character may hold, by tier (higher tier = more versatile).
-const TIER_TAG_CAP = { SS:6, S:5, A:4, B:3, C:3 };
-const tagCapFor = (tier) => TIER_TAG_CAP[tier] || 3;
+const TIER_TAG_CAP = { SS:9, S:7, A:6, B:5, C:4 };
+const tagCapFor = (tier) => TIER_TAG_CAP[tier] || 4;
 const ABILITY_TYPE_LIST = ["role_synergy","counter_immune","tag_projection","rival_bonus","adaptable","clutch","aura_buff","overwhelm"];
 
 // ─── LADDER (10 rungs) ─────────────────────────────────────────────────────
@@ -187,7 +187,7 @@ const ROLES = [
   { id:"damage",   name:"Damage",       blurb:"Offense",     wants:["range","element","melee"],    color:"#ef4444" },
   { id:"support",  name:"Support",      blurb:"Utility",     wants:["summon","mobility","barrier"],color:"#22c55e" },
   { id:"support2", name:"Support II",   blurb:"Utility",     wants:["summon","mobility","element"],color:"#14b8a6" },
-  { id:"healer",   name:"Healer",       blurb:"Sustain",     wants:["aura","element","summon"],    color:"#a855f7" },
+  { id:"healer",   name:"Healer",       blurb:"Sustain",     wants:["heal","aura","element","summon"],    color:"#a855f7" },
 ];
 const roleById = (id) => ROLES.find((r) => r.id === id);
 
@@ -231,6 +231,7 @@ const COUNTERS = [
   { win:"psychic", lose:"speed", label:"Psychic > Speed" },
   { win:"regen", lose:"element", label:"Regen > Element" },
   { win:"transform", lose:"stealth", label:"Transform > Stealth" },
+  { win:"heal", lose:"regen", label:"Heal > Regen" },
 ];
 const COUNTER_BONUS = 15;
 const tagCount = (team, tag) => team.reduce((n, c) => n + (c.tags.includes(tag) ? 1 : 0), 0);
@@ -461,6 +462,7 @@ const TAG_STYLE = {
   speed:{bg:"#0c4a4e",fg:"#67e8f9",bd:"#22d3ee"}, energy:{bg:"#4a3410",fg:"#fde047",bd:"#facc15"},
   stealth:{bg:"#1e293b",fg:"#cbd5e1",bd:"#94a3b8"}, psychic:{bg:"#4a1d4f",fg:"#f0abfc",bd:"#d946ef"},
   regen:{bg:"#14432a",fg:"#86efac",bd:"#4ade80"}, transform:{bg:"#4a2410",fg:"#fdba74",bd:"#f97316"},
+  heal:{bg:"#134e3a",fg:"#6ee7b7",bd:"#10b981"},
 };
 
 // ─── ROOT ───────────────────────────────────────────────────────────────────
