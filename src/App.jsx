@@ -496,9 +496,18 @@ function Fonts() {
     @keyframes slam{0%{opacity:0;transform:scale(1.35)}60%{transform:scale(.95)}100%{opacity:1;transform:scale(1)}}
     @keyframes spinPop{0%{opacity:0;transform:scale(.6) rotate(-8deg)}70%{transform:scale(1.06) rotate(2deg)}100%{opacity:1;transform:scale(1) rotate(0)}}
     @keyframes reelFlash{0%,100%{opacity:1}50%{opacity:.35}}
+    @keyframes clashPulse{0%{transform:scale(1)}50%{transform:scale(1.08)}100%{transform:scale(1)}}
+    @keyframes vsShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(4px)}}
+    @keyframes barGrow{from{width:0%}to{width:var(--w)}}
+    @keyframes verdictPop{0%{opacity:0;transform:scale(.4)}70%{transform:scale(1.15)}100%{opacity:1;transform:scale(1)}}
+    @keyframes sweep{0%{background-position:-200% 0}100%{background-position:200% 0}}
     .tIn{animation:tIn .3s ease both} .slam{animation:slam .45s cubic-bezier(.2,.8,.2,1) both}
     .spinPop{animation:spinPop .4s cubic-bezier(.2,.9,.3,1) both}
     .reel{animation:reelFlash .12s linear infinite}
+    .clash{animation:clashPulse .7s ease-in-out infinite}
+    .vsShake{animation:vsShake .5s ease-in-out infinite}
+    .verdictPop{animation:verdictPop .5s cubic-bezier(.2,.8,.2,1) both}
+    .sweepBar{background:linear-gradient(90deg,rgba(255,45,53,.15) 25%,rgba(255,45,53,.5) 50%,rgba(255,45,53,.15) 75%);background-size:200% 100%;animation:sweep 1.1s linear infinite}
     .hov{transition:transform .12s,border-color .12s,box-shadow .12s}
     .hov:hover{transform:translateY(-3px);border-color:!important;box-shadow:0 10px 30px -12px rgba(255,45,53,.55)}
     .redBtn{transition:background .12s} .redBtn:hover{background:#ff474e!important}
@@ -657,6 +666,98 @@ function RoleSlot({ role, member, active, onClick, disabled }) {
 }
 
 // The result / climb screen shared by both modes. team = [{character, roleId}]
+// Staged battle reveal: plays through each attempted rung with suspense, then
+// hands off to the full results screen. Skippable.
+function BattleSequence({ team, run, onDone }) {
+  const { rungs, reached, champion } = run;
+  const attempted = rungs.filter((r) => r.attempted);
+  const [idx, setIdx] = useState(0);
+  const [showVerdict, setShowVerdict] = useState(false);
+
+  const cur = attempted[idx];
+
+  React.useEffect(() => {
+    if (!cur) { onDone(); return; }
+    setShowVerdict(false);
+    const t1 = setTimeout(() => setShowVerdict(true), 1100);   // "battle in progress" then reveal
+    const t2 = setTimeout(() => {
+      if (idx + 1 < attempted.length && cur.cleared) setIdx(idx + 1);
+      else onDone();                                            // stop on final rung or a loss
+    }, 2200);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [idx, cur]);
+
+  if (!cur) return null;
+
+  const myTotal = cur.me.total, oppTotal = cur.them.total;
+  const total = myTotal + oppTotal;
+  const myPct = Math.max(8, Math.min(92, (myTotal / total) * 100));
+  const roleColor = "#a855f7";
+
+  return (
+    <div className="tIn" style={{ maxWidth:640, margin:"0 auto", textAlign:"center" }}>
+      {/* progress dots */}
+      <div style={{ display:"flex", gap:6, justifyContent:"center", marginBottom:24 }}>
+        {rungs.map((r,i) => {
+          const done = attempted.indexOf(r) > -1 && attempted.indexOf(r) < idx;
+          const active = r === cur;
+          const doneCleared = done && r.cleared;
+          return <div key={r.rung} style={{ height:6, width: active?24:12, borderRadius:999, transition:"all .3s",
+            background: active ? "#fbbf24" : doneCleared ? RED : done ? "#57534e" : "rgba(255,255,255,0.10)" }} />;
+        })}
+      </div>
+
+      <div className="c" style={{ textTransform:"uppercase", letterSpacing:"0.3em", fontSize:13, color:"#fbbf24", marginBottom:4 }}>
+        Rung {cur.rung} of {LADDER.length}
+      </div>
+      <div className="a" style={{ fontSize:34, color:"#f5f5f4", lineHeight:1, marginBottom:2 }}>{cur.title}</div>
+      <div className="c" style={{ fontSize:14, color:"#a8a29e", marginBottom:24 }}>{cur.universe} · ⚡{cur.boost.toFixed(2)}</div>
+
+      {/* the clash */}
+      <div style={{ position:"relative", borderRadius:16, padding:"32px 20px", marginBottom:20, overflow:"hidden",
+        border:"1px solid rgba(255,255,255,0.12)", background:"linear-gradient(160deg,#17181d,#0b0c10 70%)" }}>
+        {!showVerdict ? (
+          <div className="clash">
+            <div className="a vsShake" style={{ fontSize:60, lineHeight:1, color:"#f5f5f4" }}>VS</div>
+            <div className="c" style={{ marginTop:12, fontSize:16, color:"#a8a29e", letterSpacing:"0.15em", textTransform:"uppercase" }}>Battle in progress…</div>
+            <div style={{ height:6, borderRadius:999, marginTop:16, overflow:"hidden", background:"rgba(255,255,255,0.06)" }}>
+              <div className="sweepBar" style={{ height:"100%", width:"100%" }} />
+            </div>
+          </div>
+        ) : (
+          <div className="verdictPop">
+            <div className="a" style={{ fontSize:44, lineHeight:1, color: cur.cleared ? "#4ade80" : "#f87171" }}>
+              {cur.cleared ? "CLEARED" : "DEFEATED"}
+            </div>
+            {/* score bar */}
+            <div style={{ display:"flex", alignItems:"center", gap:10, marginTop:18 }}>
+              <span className="a" style={{ fontSize:22, color:"#f5f5f4", minWidth:60, textAlign:"right" }}>{myTotal.toFixed(0)}</span>
+              <div style={{ flex:1, height:14, borderRadius:999, overflow:"hidden", display:"flex", background:"#44403c" }}>
+                <div style={{ width:myPct+"%", background: cur.cleared?RED:"#78716c", transition:"width .6s ease" }} />
+                <div style={{ flex:1, background:"#3a3a3a" }} />
+              </div>
+              <span className="a" style={{ fontSize:22, color:"#a8a29e", minWidth:60, textAlign:"left" }}>{oppTotal.toFixed(0)}</span>
+            </div>
+            <div style={{ display:"flex", justifyContent:"space-between", marginTop:6 }}>
+              <span className="c" style={{ fontSize:12, color:"#f5f5f4", textTransform:"uppercase", letterSpacing:"0.1em" }}>Your squad</span>
+              <span className="c" style={{ fontSize:12, color:"#a8a29e", textTransform:"uppercase", letterSpacing:"0.1em" }}>{cur.title}</span>
+            </div>
+            {cur.me.edges.length > 0 && (
+              <div className="c" style={{ fontSize:12, color:"#6ee7b7", marginTop:10 }}>+{cur.me.bonus} {cur.me.edges.join(", ")}</div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <button onClick={onDone} className="c darkBtn"
+        style={{ textTransform:"uppercase", letterSpacing:"0.2em", fontSize:13, fontWeight:700, padding:"10px 24px", borderRadius:10,
+          border:"1px solid rgba(255,255,255,0.15)", background:"rgba(255,255,255,0.05)", color:"#a8a29e", cursor:"pointer" }}>
+        Skip to results →
+      </button>
+    </div>
+  );
+}
+
 function ClimbResult({ team, onReplay, replayLabel }) {
   const run = useMemo(() => {
     let reached = 0;
@@ -669,7 +770,13 @@ function ClimbResult({ team, onReplay, replayLabel }) {
     return { rungs, reached, champion: reached === LADDER.length };
   }, [team]);
   const { rungs, reached, champion } = run;
+  const [phase, setPhase] = useState("battle"); // battle | results
   const [copied, setCopied] = useState(false);
+
+  if (phase === "battle") {
+    return <BattleSequence team={team} run={run} onDone={() => setPhase("results")} />;
+  }
+
   const shareText = `animeVS\n${champion?"CHAMPION - flawless climb!":`Reached Rung ${reached}/${LADDER.length}`}\n${rungs.map(r=>`${r.cleared&&r.attempted?"[x]":r.attempted?"[ ]":"[-]"} R${r.rung} ${r.title}`).join("\n")}\nSquad: ${team.map(m=>`${m.character.name} (${roleById(m.roleId).name})`).join(", ")}`;
   function copyShare(){ navigator.clipboard?.writeText(shareText).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),1800);}); }
 
