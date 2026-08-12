@@ -479,7 +479,7 @@ export default function App() {
   return (
     <div style={{ minHeight:"100vh", background:INK, color:"#e7e5e4", fontFamily:"'Barlow', system-ui, sans-serif" }}>
       <Fonts />
-      <div style={{ position:"relative", maxWidth:1024, margin:"0 auto", padding:"28px 20px 60px" }}>
+      <div style={{ position:"relative", maxWidth:1024, margin:"0 auto", padding:"28px 20px 120px" }}>
         <div style={{ position:"absolute", inset:0, pointerEvents:"none", background:"radial-gradient(circle at 50% 0%, rgba(255,45,53,0.10), transparent 45%)" }} />
         <div style={{ position:"relative" }}>
           <Header mode={mode} onHome={() => { try { window.history.replaceState({}, "", window.location.pathname); } catch (e) {} setMode(null); }} />
@@ -489,8 +489,58 @@ export default function App() {
           {mode === "pvp" && <PvpMode />}
         </div>
       </div>
+      <AdBanner />
       <Analytics />
       <SpeedInsights />
+    </div>
+  );
+}
+
+// ─── AD BANNER ───────────────────────────────────────────────────────────────
+// Non-intrusive sticky banner pinned to the bottom. Never covers gameplay
+// (the page reserves bottom padding for it). Uses Google AdSense.
+//
+// SETUP: replace the two placeholders below with your real AdSense IDs:
+//   1. AD_CLIENT — your publisher ID, looks like "ca-pub-1234567890123456"
+//   2. AD_SLOT   — an ad-unit slot ID you create in the AdSense dashboard
+// Until both are set, a subtle placeholder bar shows instead (no broken ad).
+const AD_CLIENT = "ca-pub-1027225143628108"; // <-- your AdSense publisher ID
+const AD_SLOT = "XXXXXXXXXX";                // <-- your AdSense ad-unit slot ID
+
+function AdBanner() {
+  const configured = !AD_CLIENT.includes("X") && !AD_SLOT.includes("X");
+
+  React.useEffect(() => {
+    if (!configured) return;
+    // load the AdSense library once
+    if (!document.querySelector('script[data-animevs-ads]')) {
+      const s = document.createElement("script");
+      s.async = true;
+      s.src = `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${AD_CLIENT}`;
+      s.crossOrigin = "anonymous";
+      s.setAttribute("data-animevs-ads", "1");
+      document.head.appendChild(s);
+    }
+    try { (window.adsbygoogle = window.adsbygoogle || []).push({}); } catch (e) {}
+  }, [configured]);
+
+  return (
+    <div style={{ position:"fixed", left:0, right:0, bottom:0, zIndex:50,
+      display:"flex", justifyContent:"center", alignItems:"center",
+      minHeight:60, background:"rgba(11,12,16,0.92)", backdropFilter:"blur(6px)",
+      borderTop:"1px solid rgba(255,255,255,0.08)" }}>
+      {configured ? (
+        <ins className="adsbygoogle"
+          style={{ display:"block", width:"100%", height:60 }}
+          data-ad-client={AD_CLIENT}
+          data-ad-slot={AD_SLOT}
+          data-ad-format="horizontal"
+          data-full-width-responsive="false" />
+      ) : (
+        <span className="c" style={{ fontSize:11, letterSpacing:"0.2em", textTransform:"uppercase", color:"#57534e" }}>
+          advertisement
+        </span>
+      )}
     </div>
   );
 }
