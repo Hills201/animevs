@@ -468,14 +468,21 @@ const TAG_STYLE = {
 
 // ─── ROOT ───────────────────────────────────────────────────────────────────
 export default function App() {
-  const [mode, setMode] = useState(null); // null | "draft" | "spin"
+  // If the page was opened via a challenge link (?vs=CODE), start straight in VS mode.
+  const [mode, setMode] = useState(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("vs")) return "pvp";
+    } catch (e) {}
+    return null;
+  }); // null | "draft" | "spin" | "pvp" | "edit"
   return (
     <div style={{ minHeight:"100vh", background:INK, color:"#e7e5e4", fontFamily:"'Barlow', system-ui, sans-serif" }}>
       <Fonts />
       <div style={{ position:"relative", maxWidth:1024, margin:"0 auto", padding:"28px 20px 60px" }}>
         <div style={{ position:"absolute", inset:0, pointerEvents:"none", background:"radial-gradient(circle at 50% 0%, rgba(255,45,53,0.10), transparent 45%)" }} />
         <div style={{ position:"relative" }}>
-          <Header mode={mode} onHome={() => setMode(null)} />
+          <Header mode={mode} onHome={() => { try { window.history.replaceState({}, "", window.location.pathname); } catch (e) {} setMode(null); }} />
           {mode === null && <Home setMode={setMode} />}
           {mode === "draft" && <DraftMode />}
           {mode === "spin" && <SpinMode />}
