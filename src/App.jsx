@@ -539,7 +539,7 @@ function Header({ mode, onHome }) {
 // ─── HOME ─────────────────────────────────────────────────────────────────
 function Home({ setMode }) {
   const cards = [
-    { id:"spin", title:"SPIN", tagline:"Spin the reel. Take it or risk another. Slot fighters into five roles.", accent:RED },
+    { id:"spin", title:"SPIN", tagline:"Spin the reel. Take it or risk another. Slot fighters into seven roles.", accent:RED },
     { id:"draft", title:"DRAFT", tagline:"Five draws, one budget. Build the sharpest squad you can afford.", accent:"#3b82f6" },
     { id:"pvp", title:"VERSUS", tagline:"Build a team, share a code. Challenge a friend head-to-head.", accent:"#a855f7" },
   ];
@@ -566,7 +566,7 @@ function Home({ setMode }) {
         ))}
       </div>
       <div style={{ marginTop:24, padding:16, borderRadius:12, border:"1px solid rgba(255,255,255,0.08)", background:"rgba(255,255,255,0.02)" }}>
-        <div className="c" style={{ fontSize:13, textTransform:"uppercase", letterSpacing:"0.2em", color:RED, fontWeight:700, marginBottom:8 }}>The five roles</div>
+        <div className="c" style={{ fontSize:13, textTransform:"uppercase", letterSpacing:"0.2em", color:RED, fontWeight:700, marginBottom:8 }}>The seven roles</div>
         <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
           {ROLES.map((r) => (
             <div key={r.id} style={{ display:"flex", alignItems:"center", gap:6, padding:"5px 10px", borderRadius:8, background:"rgba(0,0,0,0.35)", border:`1px solid ${r.color}55` }}>
@@ -651,9 +651,9 @@ function RoleSlot({ role, member, active, onClick, disabled }) {
             </span>
             <span className="a" style={{ fontSize:22, color:fitColor }}>{fittedRating(member.character, role.id)}</span>
           </div>
-          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginTop:2, marginBottom:4 }}>
-            <div style={{ display:"flex", gap:4 }}>{member.character.tags.map((t)=><Tag key={t} t={t} small />)}</div>
-            <span className="c" style={{ fontSize:11, fontWeight:700, color:fitColor, textTransform:"uppercase", letterSpacing:"0.05em" }}>{fit.label}</span>
+          <div style={{ marginTop:2, marginBottom:4 }}>
+            <div className="c" style={{ fontSize:11, fontWeight:700, color:fitColor, textTransform:"uppercase", letterSpacing:"0.05em", marginBottom:4 }}>{fit.label}</div>
+            <div style={{ display:"flex", gap:4, flexWrap:"wrap" }}>{member.character.tags.map((t)=><Tag key={t} t={t} small />)}</div>
           </div>
           <AbilityChip ability={member.character.ability} small />
         </div>
@@ -874,7 +874,7 @@ function SpinStage({
           <div className="c" style={{ marginTop:12, fontSize:12, color:"#78716c", textAlign:"center" }}>{footNote}</div>
         </div>
 
-        {/* right: the five role slots */}
+        {/* right: the seven role slots */}
         <div>
           <SideTitle>Your Formation</SideTitle>
           <div style={{ display:"grid", gridTemplateColumns:"1fr", gap:10, marginTop:10 }} className="roleGrid">
