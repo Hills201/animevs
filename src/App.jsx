@@ -63,7 +63,6 @@ const CHARACTERS = [
   { id:"kurapika-hunter-x-hunter", name:"Kurapika", series:"Hunter x Hunter", tier:"A", cost:5, rating:80, tags:["element","heal","regen","energy","mobility","range"], role:"healer", ability:{ name:"Ranged Barrage", type:"role_synergy", x:4, role:"damage" } },
   { id:"illumi-hunter-x-hunter", name:"Illumi", series:"Hunter x Hunter", tier:"A", cost:5, rating:81, tags:["melee","element","mobility","range","psychic"], role:"support", ability:{ name:"Elemental Burst", type:"role_synergy", x:4, role:"damage" } },
   { id:"killua-hunter-x-hunter", name:"Killua", series:"Hunter x Hunter", tier:"A", cost:5, rating:81, tags:["aura","melee","mobility","speed","energy","element"], role:"support", ability:{ name:"Godspeed", type:"role_synergy", x:7, role:"support" } },
-  { id:"ging-hunter-x-hunter", name:"Ging", series:"Hunter x Hunter", tier:"C", cost:3, rating:55, tags:["summon","aura"], role:"support", ability:{ name:"Battle Aura", type:"aura_buff", x:3 } },
   { id:"aizen-bleach", name:"Aizen", series:"Bleach", tier:"SS", cost:9, rating:96, tags:["barrier","element","range","aura","energy","mobility","speed","stealth"], role:"captain", ability:{ name:"Kyoka Suigetsu", type:"counter_immune" } },
   { id:"yhwach-bleach", name:"Yhwach", series:"Bleach", tier:"SS", cost:9, rating:98, tags:["range","mobility","element","aura","summon","speed","energy","regen"], role:"captain", ability:{ name:"The Almighty", type:"clutch", x:9 } },
   { id:"ichigo-bleach", name:"Ichigo", series:"Bleach", tier:"S", cost:8, rating:94, tags:["range","barrier","mobility","melee","aura","speed","transform"], role:"damage", ability:{ name:"Getsuga Tensho", type:"role_synergy", x:7, role:"damage" } },
@@ -91,7 +90,6 @@ const CHARACTERS = [
   { id:"tatsumaki-one-punch-man", name:"Tatsumaki", series:"One Punch Man", tier:"S", cost:9, rating:91, tags:["aura","psychic","regen","mobility","energy","element","range"], role:"support", ability:{ name:"Terrible Tornado", type:"aura_buff", x:5 } },
   { id:"genos-one-punch-man", name:"Genos", series:"One Punch Man", tier:"A", cost:6, rating:85, tags:["melee","speed","energy","transform","mobility","range"], role:"tank", ability:{ name:"Titanic Frame", type:"role_synergy", x:5, role:"tank" } },
   { id:"bang-one-punch-man", name:"Bang", series:"One Punch Man", tier:"A", cost:7, rating:86, tags:["melee","mobility","speed","energy"], role:"damage", ability:{ name:"Guard Field", type:"tag_projection", tag:"barrier" } },
-  { id:"king-one-punch-man", name:"King", series:"One Punch Man", tier:"C", cost:3, rating:60, tags:["barrier","element"], role:"tank", ability:{ name:"Guard Field", type:"aura_buff", x:3 } },
   { id:"metal-bat-one-punch-man", name:"Metal Bat", series:"One Punch Man", tier:"B", cost:5, rating:80, tags:["melee","mobility","element","speed"], role:"tank", ability:{ name:"Blinding Speed", type:"role_synergy", x:4, role:"support" } },
   { id:"atomic-samurai-one-punch-man", name:"Atomic Samurai", series:"One Punch Man", tier:"B", cost:5, rating:80, tags:["melee","range","mobility","element","speed"], role:"support", ability:{ name:"Guard Field", type:"tag_projection", tag:"barrier" } },
   { id:"shigaraki-my-hero-academia", name:"Shigaraki", series:"My Hero Academia", tier:"S", cost:7, rating:89, tags:["melee","mobility","range","element","aura","regen"], role:"captain", ability:{ name:"Blinding Speed", type:"aura_buff", x:4, tag:"element", role:"support" } },
@@ -215,7 +213,9 @@ function fittedRating(character, roleId) {
 const BUDGET = 50;
 const PICKS = 7;
 const DRAW_SIZE = 5;
-const MAX_REROLLS = 3;
+const MAX_REROLLS_SPIN = 1;
+const MAX_REROLLS_DRAFT = 2;
+const MAX_REROLLS = 3; // legacy fallback (unused directly)
 
 // ─── COUNTERS (team-level) ──────────────────────────────────────────────────
 const COUNTERS = [
@@ -946,6 +946,7 @@ function SpinMode() {
   const takenIds = Object.values(team).map((m) => m.character.id);
   const filledCount = Object.keys(team).length;
   const allFilled = filledCount === ROLES.length;
+  const MAX_REROLLS = MAX_REROLLS_SPIN;
   const rerollsLeft = MAX_REROLLS - rerollsUsed;
 
   function spin() {
@@ -1059,6 +1060,7 @@ function DraftMode() {
   const takenIds = [...placed.map((c)=>c.id), ...(current?[current.id]:[])];
   const filledCount = Object.keys(team).length;
   const allFilled = filledCount === ROLES.length;
+  const MAX_REROLLS = MAX_REROLLS_DRAFT;
 
   const MIN_COST = Math.min(...CHARACTERS.map((c) => c.cost));
   function affordableCost(currentPlacedCount, spentOverride) {
@@ -1490,6 +1492,7 @@ function PvpMode() {
   const takenIds = Object.values(myTeam).map((m) => m.character.id);
   const filledCount = Object.keys(myTeam).length;
   const allFilled = filledCount === ROLES.length;
+  const MAX_REROLLS = MAX_REROLLS_SPIN;
   const rerollsLeft = MAX_REROLLS - rerollsUsed;
 
   // Build a full shareable challenge URL from a team code.
