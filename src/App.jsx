@@ -165,16 +165,16 @@ const ABILITY_TYPE_LIST = ["role_synergy","counter_immune","tag_projection","riv
 
 // ─── LADDER (10 rungs) ─────────────────────────────────────────────────────
 const LADDER = [
-  { rung:1, title:"The Sins", universe:"Seven Deadly Sins", team:["escanor-seven-deadly-sins","meliodas-seven-deadly-sins","estarossa-seven-deadly-sins","zeldris-seven-deadly-sins","ban-seven-deadly-sins","merlin-seven-deadly-sins","gowther-seven-deadly-sins"], boost:0.684 },
-  { rung:2, title:"Devil Hunters", universe:"Chainsaw Man", team:["makima-chainsaw-man","kishibe-chainsaw-man","denji-chainsaw-man","katana-man-chainsaw-man","aki-chainsaw-man","power-chainsaw-man","reze-chainsaw-man"], boost:0.819 },
-  { rung:3, title:"U.A. Vanguard", universe:"My Hero Academia", team:["shigaraki-my-hero-academia","deku-my-hero-academia","endeavor-my-hero-academia","bakugo-my-hero-academia","todoroki-my-hero-academia","dabi-my-hero-academia","mirko-my-hero-academia"], boost:0.844 },
-  { rung:4, title:"Jujutsu Sorcerers", universe:"Jujutsu Kaisen", team:["sukuna-jujutsu-kaisen","gojo-satoru-jujutsu-kaisen","yuta-jujutsu-kaisen","geto-jujutsu-kaisen","mahito-jujutsu-kaisen","nanami-jujutsu-kaisen","hakari-jujutsu-kaisen"], boost:0.794 },
-  { rung:5, title:"The Hashira", universe:"Demon Slayer", team:["muzan-demon-slayer","kokushibo-demon-slayer","gyomei-demon-slayer","akaza-demon-slayer","tengen-demon-slayer","doma-demon-slayer","rengoku-demon-slayer"], boost:0.877 },
-  { rung:6, title:"Soul Reapers", universe:"Bleach", team:["aizen-bleach","yhwach-bleach","ichigo-bleach","ulquiorra-bleach","gremmy-bleach","kenpachi-bleach","toshiro-bleach"], boost:0.87 },
-  { rung:7, title:"The Zodiacs", universe:"Hunter x Hunter", team:["meruem-hunter-x-hunter","netero-hunter-x-hunter","chrollo-hunter-x-hunter","feitan-hunter-x-hunter","hisoka-hunter-x-hunter","gon-hunter-x-hunter","neferpitou-hunter-x-hunter"], boost:0.918 },
-  { rung:8, title:"The Kage", universe:"Naruto", team:["hashirama-naruto","madara-naruto","naruto-naruto","obito-naruto","minato-naruto","jiraiya-naruto","itachi-naruto"], boost:0.921 },
-  { rung:9, title:"Gods of Destruction", universe:"Dragon Ball", team:["beerus-dragon-ball","goku-dragon-ball","vegeta-dragon-ball","jiren-dragon-ball","gohan-dragon-ball","broly-dragon-ball","cell-dragon-ball"], boost:0.927 },
-  { rung:10, title:"The Yonko", universe:"One Piece", team:["kaido-one-piece","luffy-one-piece","shanks-one-piece","mihawk-one-piece","zoro-one-piece","doflamingo-one-piece","law-one-piece"], boost:1.022 },
+  { rung:1, title:"The Hashira", universe:"Demon Slayer", team:["muzan-demon-slayer","kokushibo-demon-slayer","gyomei-demon-slayer","akaza-demon-slayer","tanjiro-demon-slayer","giyu-demon-slayer","shinobu-demon-slayer"], boost:0.714 },
+  { rung:2, title:"Hero Association", universe:"One Punch Man", team:["saitama-one-punch-man","blast-one-punch-man","garou-one-punch-man","tatsumaki-one-punch-man","boros-one-punch-man","bang-one-punch-man","genos-one-punch-man"], boost:0.749 },
+  { rung:3, title:"Magic Knights", universe:"Black Clover", team:["julius-black-clover","asta-black-clover","yuno-black-clover","noelle-black-clover","yami-black-clover","mereoleona-black-clover","zagred-black-clover"], boost:0.785 },
+  { rung:4, title:"The Sins", universe:"Seven Deadly Sins", team:["escanor-seven-deadly-sins","meliodas-seven-deadly-sins","zeldris-seven-deadly-sins","estarossa-seven-deadly-sins","ban-seven-deadly-sins","merlin-seven-deadly-sins","gowther-seven-deadly-sins"], boost:0.815 },
+  { rung:5, title:"The Nen Masters", universe:"Hunter x Hunter", team:["meruem-hunter-x-hunter","netero-hunter-x-hunter","chrollo-hunter-x-hunter","gon-hunter-x-hunter","feitan-hunter-x-hunter","neferpitou-hunter-x-hunter","hisoka-hunter-x-hunter"], boost:0.84 },
+  { rung:6, title:"Cursed Elite", universe:"Jujutsu Kaisen", team:["sukuna-jujutsu-kaisen","gojo-satoru-jujutsu-kaisen","yuta-jujutsu-kaisen","geto-jujutsu-kaisen","maki-jujutsu-kaisen","hakari-jujutsu-kaisen","todo-jujutsu-kaisen"], boost:0.881 },
+  { rung:7, title:"Soul Society", universe:"Bleach", team:["yhwach-bleach","aizen-bleach","ichigo-bleach","kenpachi-bleach","ulquiorra-bleach","byakuya-bleach","kisuke-bleach"], boost:0.916 },
+  { rung:8, title:"Leaf Legends", universe:"Naruto", team:["naruto-naruto","hashirama-naruto","madara-naruto","obito-naruto","itachi-naruto","tsunade-naruto","minato-naruto"], boost:0.932 },
+  { rung:9, title:"The Yonko", universe:"One Piece", team:["luffy-one-piece","kaido-one-piece","shanks-one-piece","sanji-one-piece","mihawk-one-piece","zoro-one-piece","doflamingo-one-piece"], boost:1.012 },
+  { rung:10, title:"Gods of Destruction", universe:"Dragon Ball", team:["beerus-dragon-ball","goku-dragon-ball","vegeta-dragon-ball","jiren-dragon-ball","broly-dragon-ball","gohan-dragon-ball","cell-dragon-ball"], boost:1.012 },
 ];
 
 // ─── ROLES ─────────────────────────────────────────────────────────────────
