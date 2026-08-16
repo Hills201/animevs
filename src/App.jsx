@@ -476,13 +476,14 @@ export default function App() {
     } catch (e) {}
     return null;
   }); // null | "draft" | "spin" | "pvp" | "edit"
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   return (
     <div style={{ minHeight:"100vh", background:INK, color:"#e7e5e4", fontFamily:"'Barlow', system-ui, sans-serif" }}>
       <Fonts />
       <div style={{ position:"relative", maxWidth:1024, margin:"0 auto", padding:"28px 20px 120px" }}>
         <div style={{ position:"absolute", inset:0, pointerEvents:"none", background:"radial-gradient(circle at 50% 0%, rgba(255,45,53,0.10), transparent 45%)" }} />
         <div style={{ position:"relative" }}>
-          <Header mode={mode} onHome={() => { try { window.history.replaceState({}, "", window.location.pathname); } catch (e) {} setMode(null); }} />
+          <Header mode={mode} onHome={() => { try { window.history.replaceState({}, "", window.location.pathname); } catch (e) {} setMode(null); }} onFeedback={() => setFeedbackOpen(true)} />
           {mode === null && <Home setMode={setMode} />}
           {mode === "draft" && <DraftMode />}
           {mode === "spin" && <SpinMode />}
@@ -490,13 +491,119 @@ export default function App() {
         </div>
       </div>
       <AdBanner />
+      {feedbackOpen && <FeedbackModal currentMode={mode} onClose={() => setFeedbackOpen(false)} />}
       <Analytics />
       <SpeedInsights />
     </div>
   );
 }
 
-// ─── AD BANNER ───────────────────────────────────────────────────────────────
+// ─── FEEDBACK MODAL ──────────────────────────────────────────────────────────
+// In-app feedback form. Submits to Web3Forms (free, no backend needed) which
+// emails the submission straight to you. Get a free access key at web3forms.com
+// (no account required beyond an email to receive the key) and paste it below.
+const WEB3FORMS_KEY = "0be791f0-f6ee-4c1a-802b-8c5abb172caf"; // <-- paste your key from web3forms.com
+
+const FEEDBACK_CATEGORIES = [
+  { id:"bug",       label:"🐞 Bug Report",        hint:"Something broke or didn't work as expected" },
+  { id:"suggestion",label:"💡 Suggestion",         hint:"An idea for a new feature or improvement" },
+  { id:"balance",   label:"⚖️ Balance Feedback",   hint:"A character, tag, or the ladder feels off" },
+];
+
+function FeedbackModal({ currentMode, onClose }) {
+  const [category, setCategory] = useState(null);
+  const [message, setMessage] = useState("");
+  const [email, setEmail] = useState("");
+  const [status, setStatus] = useState("idle"); // idle | sending | sent | error
+  const configured = WEB3FORMS_KEY && !WEB3FORMS_KEY.includes("YOUR_");
+
+  async function submit() {
+    if (!category || !message.trim()) return;
+    if (!configured) { setStatus("error"); return; }
+    setStatus("sending");
+    try {
+      const res = await fetch("https://api.web3forms.com/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          access_key: WEB3FORMS_KEY,
+          subject: `animeVS feedback — ${FEEDBACK_CATEGORIES.find((c)=>c.id===category)?.label || category}`,
+          category,
+          message,
+          reply_to: email || undefined,
+          page_mode: currentMode || "home",
+        }),
+      });
+      const data = await res.json();
+      setStatus(data.success ? "sent" : "error");
+    } catch (e) {
+      setStatus("error");
+    }
+  }
+
+  return (
+    <div onClick={onClose} style={{ position:"fixed", inset:0, zIndex:100, background:"rgba(0,0,0,0.7)",
+      display:"flex", alignItems:"flex-end", justifyContent:"center", backdropFilter:"blur(2px)" }}>
+      <div onClick={(e)=>e.stopPropagation()} className="slam"
+        style={{ width:"100%", maxWidth:520, maxHeight:"85vh", overflowY:"auto", background:"#141519",
+          borderRadius:"18px 18px 0 0", border:"1px solid rgba(255,255,255,0.1)", borderBottom:"none",
+          padding:"20px 20px 28px" }}>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16 }}>
+          <div className="a" style={{ fontSize:24, color:"#f5f5f4" }}>FEEDBACK</div>
+          <button onClick={onClose} className="c" style={{ background:"transparent", border:"none", color:"#78716c", fontSize:22, cursor:"pointer", padding:4, lineHeight:1 }}>✕</button>
+        </div>
+
+        {status === "sent" ? (
+          <div style={{ textAlign:"center", padding:"20px 0" }}>
+            <div style={{ fontSize:40, marginBottom:10 }}>✓</div>
+            <div className="c" style={{ fontSize:16, fontWeight:700, color:"#4ade80", marginBottom:6 }}>Thanks — got it!</div>
+            <div className="c" style={{ fontSize:13, color:"#a8a29e", marginBottom:18 }}>Your feedback helps shape the next update.</div>
+            <button onClick={onClose} className="c" style={{ padding:"10px 24px", borderRadius:10, border:"1px solid rgba(255,255,255,0.15)", background:"rgba(255,255,255,0.05)", color:"#e7e5e4", cursor:"pointer", fontWeight:700 }}>Close</button>
+          </div>
+        ) : (
+          <>
+            <div className="c" style={{ fontSize:12, textTransform:"uppercase", letterSpacing:"0.15em", color:"#78716c", fontWeight:700, marginBottom:8 }}>What kind of feedback?</div>
+            <div style={{ display:"flex", flexDirection:"column", gap:8, marginBottom:16 }}>
+              {FEEDBACK_CATEGORIES.map((c) => (
+                <button key={c.id} onClick={() => setCategory(c.id)}
+                  style={{ textAlign:"left", padding:"12px 14px", borderRadius:10, cursor:"pointer",
+                    border: category===c.id ? `1px solid ${RED}` : "1px solid rgba(255,255,255,0.12)",
+                    background: category===c.id ? "rgba(255,45,53,0.1)" : "rgba(255,255,255,0.03)" }}>
+                  <div className="c" style={{ fontWeight:700, fontSize:14, color:"#f5f5f4" }}>{c.label}</div>
+                  <div className="c" style={{ fontSize:12, color:"#a8a29e", marginTop:2 }}>{c.hint}</div>
+                </button>
+              ))}
+            </div>
+
+            <div className="c" style={{ fontSize:12, textTransform:"uppercase", letterSpacing:"0.15em", color:"#78716c", fontWeight:700, marginBottom:8 }}>Details</div>
+            <textarea value={message} onChange={(e)=>setMessage(e.target.value)} rows={4}
+              placeholder={category==="bug" ? "What happened? What did you expect instead?" : category==="balance" ? "Which character/tag/rung, and what feels off?" : "What's your idea?"}
+              className="c" style={{ width:"100%", padding:"10px 12px", borderRadius:10, background:"rgba(255,255,255,0.05)",
+                border:"1px solid rgba(255,255,255,0.14)", color:"#f5f5f4", fontSize:14, outline:"none", resize:"vertical", boxSizing:"border-box" }} />
+
+            <div className="c" style={{ fontSize:12, textTransform:"uppercase", letterSpacing:"0.15em", color:"#78716c", fontWeight:700, margin:"14px 0 8px" }}>Email (optional — if you want a reply)</div>
+            <input value={email} onChange={(e)=>setEmail(e.target.value)} type="email" placeholder="you@example.com"
+              className="c" style={{ width:"100%", padding:"10px 12px", borderRadius:10, background:"rgba(255,255,255,0.05)",
+                border:"1px solid rgba(255,255,255,0.14)", color:"#f5f5f4", fontSize:14, outline:"none", boxSizing:"border-box" }} />
+
+            {status === "error" && (
+              <div className="c" style={{ fontSize:12, color:"#ef4444", marginTop:10 }}>
+                {configured ? "Couldn't send — check your connection and try again." : "Feedback form isn't fully set up yet."}
+              </div>
+            )}
+
+            <button onClick={submit} disabled={!category || !message.trim() || status==="sending"}
+              className="a" style={{ marginTop:16, width:"100%", fontSize:18, padding:"14px", borderRadius:12,
+                background: (!category||!message.trim()||status==="sending") ? "#44210f" : RED, color:"#fff", border:"none",
+                cursor: (!category||!message.trim()||status==="sending") ? "not-allowed" : "pointer" }}>
+              {status==="sending" ? "SENDING…" : "SEND FEEDBACK"}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
 // Non-intrusive sticky banner pinned to the bottom. Never covers gameplay
 // (the page reserves bottom padding for it). Uses Google AdSense.
 //
@@ -573,7 +680,7 @@ function Fonts() {
   `}</style>;
 }
 
-function Header({ mode, onHome }) {
+function Header({ mode, onHome, onFeedback }) {
   return (
     <header style={{ marginBottom:28, display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, flexWrap:"wrap" }}>
       <div style={{ display:"flex", alignItems:"center", gap:12, cursor: mode?"pointer":"default" }} onClick={mode?onHome:undefined}>
@@ -582,8 +689,14 @@ function Header({ mode, onHome }) {
         </h1>
       </div>
       <div style={{ display:"flex", alignItems:"center", gap:10, flexShrink:0 }}>
+        <button onClick={onFeedback} className="c"
+          style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, textTransform:"uppercase", letterSpacing:"0.1em",
+            fontWeight:700, padding:"7px 12px", borderRadius:8, border:"1px solid rgba(255,255,255,0.14)",
+            background:"rgba(255,255,255,0.04)", color:"#a8a29e", cursor:"pointer", whiteSpace:"nowrap" }}>
+          💬 Feedback
+        </button>
         {/* Small, quiet support link — swap the href for your real Ko-fi page */}
-        <a href="https://ko-fi.com/animevs" target="_blank" rel="noopener noreferrer"
+        <a href="https://ko-fi.com/YOUR_KOFI_USERNAME" target="_blank" rel="noopener noreferrer"
           className="c" style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, textTransform:"uppercase", letterSpacing:"0.1em",
             fontWeight:700, padding:"7px 12px", borderRadius:8, border:"1px solid rgba(255,45,53,0.3)",
             background:"rgba(255,45,53,0.08)", color:"#ff8a8f", textDecoration:"none", whiteSpace:"nowrap" }}>
