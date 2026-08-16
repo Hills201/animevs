@@ -594,7 +594,7 @@ function HowToPlayButton({ onClick }) {
 // In-app feedback form. Submits to Web3Forms (free, no backend needed) which
 // emails the submission straight to you. Get a free access key at web3forms.com
 // (no account required beyond an email to receive the key) and paste it below.
-const WEB3FORMS_KEY = "YOUR_WEB3FORMS_ACCESS_KEY"; // <-- paste your key from web3forms.com
+const WEB3FORMS_KEY = "0be791f0-f6ee-4c1a-802b-8c5abb172caf"; // <-- paste your key from web3forms.com
 
 const FEEDBACK_CATEGORIES = [
   { id:"bug",       label:"🐞 Bug Report",        hint:"Something broke or didn't work as expected" },
@@ -788,7 +788,7 @@ function Header({ mode, onHome, onFeedback }) {
           💬 Feedback
         </button>
         {/* Small, quiet support link — swap the href for your real Ko-fi page */}
-        <a href="https://ko-fi.com/YOUR_KOFI_USERNAME" target="_blank" rel="noopener noreferrer"
+        <a href="https://ko-fi.com/animevs" target="_blank" rel="noopener noreferrer"
           className="c" style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, textTransform:"uppercase", letterSpacing:"0.1em",
             fontWeight:700, padding:"7px 12px", borderRadius:8, border:"1px solid rgba(255,45,53,0.3)",
             background:"rgba(255,45,53,0.08)", color:"#ff8a8f", textDecoration:"none", whiteSpace:"nowrap" }}>
