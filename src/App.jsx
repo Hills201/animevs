@@ -498,11 +498,103 @@ export default function App() {
   );
 }
 
-// ─── FEEDBACK MODAL ──────────────────────────────────────────────────────────
+// ─── HOW TO PLAY ─────────────────────────────────────────────────────────────
+// Shown automatically the first time a player enters each mode (remembered via
+// localStorage), and reopenable anytime via the "?" button. Falls back to
+// showing every time if localStorage is unavailable — never breaks the mode.
+const HOW_TO_PLAY = {
+  spin: {
+    title: "SPIN",
+    accent: RED,
+    steps: [
+      { h:"Spin the reel", b:"Hit SPIN to summon a random fighter from the roster." },
+      { h:"Place or reroll", b:"Slot them into one of your 7 roles, or discard and spin again. You get 1 reroll." },
+      { h:"Fill all 7 roles", b:"Captain, Vice-Captain, Tank, Damage, Support, Support II, Healer — role-fit and signature bonuses boost fighters placed well." },
+      { h:"Climb the ladder", b:"Once your squad is full, take on all 10 rungs. Clear as many as you can — the top is a real challenge." },
+    ],
+  },
+  draft: {
+    title: "DRAFT",
+    accent: "#3b82f6",
+    steps: [
+      { h:"Spend a budget", b:"You've got a fixed credit budget to build all 7 fighters — stronger characters cost more." },
+      { h:"Pick from 5 options", b:"Each spin draws 5 fighters. Choose one that fits your budget and roles, or reroll (2 allowed)." },
+      { h:"Never get stuck", b:"The game always keeps enough budget in reserve so you can finish your team — no dead ends." },
+      { h:"The harder challenge", b:"Draft's tighter budget makes the ladder tougher than Spin — a full clear here is a real achievement." },
+    ],
+  },
+  pvp: {
+    title: "VERSUS",
+    accent: "#a855f7",
+    steps: [
+      { h:"Build your team", b:"Spin to fill your 7 roles, same as Spin mode — your opponent can't see your picks." },
+      { h:"Get a challenge link", b:"Lock in and you'll get a shareable link. Send it to a friend to challenge them." },
+      { h:"They build blind", b:"Opening your link drops them straight into building their own team, hidden from yours." },
+      { h:"Reveal & resolve", b:"Once both teams are set, it reveals both squads — higher total score wins." },
+    ],
+  },
+};
+
+function useSeenModal(key) {
+  const [seen, setSeen] = useState(() => {
+    try { return localStorage.getItem(key) === "1"; } catch (e) { return false; }
+  });
+  function markSeen() {
+    try { localStorage.setItem(key, "1"); } catch (e) {}
+    setSeen(true);
+  }
+  return [seen, markSeen];
+}
+
+function HowToPlayModal({ modeId, onClose }) {
+  const content = HOW_TO_PLAY[modeId];
+  if (!content) return null;
+  return (
+    <div onClick={onClose} style={{ position:"fixed", inset:0, zIndex:100, background:"rgba(0,0,0,0.7)",
+      display:"flex", alignItems:"center", justifyContent:"center", backdropFilter:"blur(2px)", padding:20 }}>
+      <div onClick={(e)=>e.stopPropagation()} className="slam"
+        style={{ width:"100%", maxWidth:480, maxHeight:"85vh", overflowY:"auto", background:"#141519",
+          borderRadius:18, border:`1px solid ${content.accent}55`, padding:24 }}>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:18 }}>
+          <div className="a" style={{ fontSize:26, color:"#f5f5f4" }}>HOW TO PLAY <span style={{ color:content.accent }}>{content.title}</span></div>
+          <button onClick={onClose} className="c" style={{ background:"transparent", border:"none", color:"#78716c", fontSize:22, cursor:"pointer", padding:4, lineHeight:1 }}>✕</button>
+        </div>
+        <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
+          {content.steps.map((s, i) => (
+            <div key={i} style={{ display:"flex", gap:14 }}>
+              <div className="a" style={{ fontSize:20, color:content.accent, minWidth:26, flexShrink:0 }}>{i+1}</div>
+              <div>
+                <div className="c" style={{ fontWeight:700, fontSize:15, color:"#f5f5f4" }}>{s.h}</div>
+                <div className="c" style={{ fontSize:13, color:"#a8a29e", marginTop:2, lineHeight:1.4 }}>{s.b}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <button onClick={onClose} className="a" style={{ marginTop:22, width:"100%", fontSize:17, padding:"13px", borderRadius:12,
+          background:content.accent, color:"#fff", border:"none", cursor:"pointer" }}>
+          GOT IT
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Small reopenable "?" button — drop into any mode's header area.
+function HowToPlayButton({ onClick }) {
+  return (
+    <button onClick={onClick} className="c"
+      style={{ width:30, height:30, borderRadius:999, border:"1px solid rgba(255,255,255,0.18)", background:"rgba(255,255,255,0.05)",
+        color:"#a8a29e", cursor:"pointer", fontWeight:700, fontSize:14, flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center" }}>
+      ?
+    </button>
+  );
+}
+
+
 // In-app feedback form. Submits to Web3Forms (free, no backend needed) which
 // emails the submission straight to you. Get a free access key at web3forms.com
 // (no account required beyond an email to receive the key) and paste it below.
-const WEB3FORMS_KEY = "0be791f0-f6ee-4c1a-802b-8c5abb172caf"; // <-- paste your key from web3forms.com
+const WEB3FORMS_KEY = "YOUR_WEB3FORMS_ACCESS_KEY"; // <-- paste your key from web3forms.com
 
 const FEEDBACK_CATEGORIES = [
   { id:"bug",       label:"🐞 Bug Report",        hint:"Something broke or didn't work as expected" },
@@ -1024,7 +1116,7 @@ function ClimbResult({ team, onReplay, replayLabel }) {
 // what `renderReel` shows (1 char vs 5 options) and how a character is chosen.
 function SpinStage({
   title, subtitle, team, activeChar, onPlace, allFilled, onClimb,
-  reelArea, belowReel, filledCount, footNote,
+  reelArea, belowReel, filledCount, footNote, onHelp,
 }) {
   return (
     <div className="tIn">
@@ -1033,9 +1125,12 @@ function SpinStage({
 
         {/* left: spinner column */}
         <div>
-          <div style={{ marginBottom:12 }}>
-            <div className="c" style={{ color:RED, letterSpacing:"0.25em", fontSize:12, textTransform:"uppercase" }}>{title}</div>
-            {subtitle && <div className="c" style={{ fontSize:13, color:"#a8a29e", marginTop:2 }}>{subtitle}</div>}
+          <div style={{ marginBottom:12, display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:10 }}>
+            <div>
+              <div className="c" style={{ color:RED, letterSpacing:"0.25em", fontSize:12, textTransform:"uppercase" }}>{title}</div>
+              {subtitle && <div className="c" style={{ fontSize:13, color:"#a8a29e", marginTop:2 }}>{subtitle}</div>}
+            </div>
+            {onHelp && <HowToPlayButton onClick={onHelp} />}
           </div>
           {reelArea}
           {belowReel}
@@ -1116,6 +1211,8 @@ function SpinMode() {
   const allFilled = filledCount === ROLES.length;
   const MAX_REROLLS = MAX_REROLLS_SPIN;
   const rerollsLeft = MAX_REROLLS - rerollsUsed;
+  const [seenHelp, markSeenHelp] = useSeenModal("animevs_seen_help_spin");
+  const [helpOpen, setHelpOpen] = useState(!seenHelp);
 
   function spin() {
     if (current || allFilled) return;
@@ -1198,14 +1295,18 @@ function SpinMode() {
   );
 
   return (
-    <SpinStage
-      title="Spin Mode" subtitle="One fighter per spin — take it or risk another."
-      team={team} activeChar={current} onPlace={placeInto}
-      allFilled={allFilled} onClimb={() => setPhase("done")}
-      reelArea={reelArea} belowReel={belowReel}
-      filledCount={filledCount}
-      footNote={`Rerolls left: ${rerollsLeft}/${MAX_REROLLS} · Roles filled: ${filledCount}/${ROLES.length}`}
-    />
+    <>
+      <SpinStage
+        title="Spin Mode" subtitle="One fighter per spin — take it or risk another."
+        team={team} activeChar={current} onPlace={placeInto}
+        allFilled={allFilled} onClimb={() => setPhase("done")}
+        reelArea={reelArea} belowReel={belowReel}
+        filledCount={filledCount}
+        footNote={`Rerolls left: ${rerollsLeft}/${MAX_REROLLS} · Roles filled: ${filledCount}/${ROLES.length}`}
+        onHelp={() => setHelpOpen(true)}
+      />
+      {helpOpen && <HowToPlayModal modeId="spin" onClose={() => { setHelpOpen(false); markSeenHelp(); }} />}
+    </>
   );
 }
 
@@ -1229,6 +1330,8 @@ function DraftMode() {
   const filledCount = Object.keys(team).length;
   const allFilled = filledCount === ROLES.length;
   const MAX_REROLLS = MAX_REROLLS_DRAFT;
+  const [seenHelp, markSeenHelp] = useSeenModal("animevs_seen_help_draft");
+  const [helpOpen, setHelpOpen] = useState(!seenHelp);
 
   const MIN_COST = Math.min(...CHARACTERS.map((c) => c.cost));
   function affordableCost(currentPlacedCount, spentOverride) {
@@ -1397,20 +1500,21 @@ function DraftMode() {
   );
 
   return (
-    <SpinStage
-      title="Draft Mode" subtitle={`Spin for five · ${remaining} credits left`}
-      team={team} activeChar={current} onPlace={placeInto}
-      allFilled={allFilled} onClimb={() => setPhase("done")}
-      reelArea={reelArea} belowReel={belowReel}
-      filledCount={filledCount}
-      footNote={`Budget ${BUDGET - placed.reduce((s,x)=>s+x.cost,0)} left · Roles filled: ${filledCount}/${ROLES.length}`}
-    />
+    <>
+      <SpinStage
+        title="Draft Mode" subtitle={`Spin for five · ${remaining} credits left`}
+        team={team} activeChar={current} onPlace={placeInto}
+        allFilled={allFilled} onClimb={() => setPhase("done")}
+        reelArea={reelArea} belowReel={belowReel}
+        filledCount={filledCount}
+        footNote={`Budget ${BUDGET - placed.reduce((s,x)=>s+x.cost,0)} left · Roles filled: ${filledCount}/${ROLES.length}`}
+        onHelp={() => setHelpOpen(true)}
+      />
+      {helpOpen && <HowToPlayModal modeId="draft" onClose={() => { setHelpOpen(false); markSeenHelp(); }} />}
+    </>
   );
 }
 
-// ─── EDITOR MODE ─────────────────────────────────────────────────────────────
-// Browse all characters, tune tier/rating/cost/tags/ability. Edits apply to the
-// live CHARACTERS array for this session. Export copies the full roster as JSON.
 // ─── PVP MODE ────────────────────────────────────────────────────────────────
 // Flow: choose to Host (build first, get code) or Challenge (paste code, build blind),
 // then both teams reveal and higher total wins. Uses spin-to-build for the team.
@@ -1454,6 +1558,8 @@ function PvpMode() {
   const allFilled = filledCount === ROLES.length;
   const MAX_REROLLS = MAX_REROLLS_SPIN;
   const rerollsLeft = MAX_REROLLS - rerollsUsed;
+  const [seenHelp, markSeenHelp] = useSeenModal("animevs_seen_help_pvp");
+  const [helpOpen, setHelpOpen] = useState(!seenHelp);
 
   // Build a full shareable challenge URL from a team code.
   function challengeLink(code) {
@@ -1511,10 +1617,14 @@ function PvpMode() {
   if (stage === "menu") {
     return (
       <div className="tIn" style={{ maxWidth:560, margin:"0 auto" }}>
-        <div className="a" style={{ fontSize:28, color:"#f5f5f4", marginBottom:6 }}>VERSUS</div>
+        <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:10, marginBottom:6 }}>
+          <div className="a" style={{ fontSize:28, color:"#f5f5f4" }}>VERSUS</div>
+          <HowToPlayButton onClick={() => setHelpOpen(true)} />
+        </div>
         <p className="c" style={{ fontSize:15, color:"#a8a29e", marginBottom:24 }}>
           Two teams, no luck of the ladder — highest total wins. Build hidden, then reveal.
         </p>
+        {helpOpen && <HowToPlayModal modeId="pvp" onClose={() => { setHelpOpen(false); markSeenHelp(); }} />}
         <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
           <button onClick={() => setStage("build")} className="hov"
             style={{ textAlign:"left", padding:22, borderRadius:14, cursor:"pointer", color:"#e7e5e4",
@@ -1607,7 +1717,9 @@ function PvpMode() {
           reelArea={reelArea} belowReel={belowReel}
           filledCount={filledCount}
           footNote={`Rerolls left: ${rerollsLeft}/${MAX_REROLLS} · Roles filled: ${filledCount}/${ROLES.length}`}
+          onHelp={() => setHelpOpen(true)}
         />
+        {helpOpen && <HowToPlayModal modeId="pvp" onClose={() => { setHelpOpen(false); markSeenHelp(); }} />}
       </div>
     );
   }
