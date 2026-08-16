@@ -477,13 +477,14 @@ export default function App() {
     return null;
   }); // null | "draft" | "spin" | "pvp" | "edit"
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(false);
   return (
     <div style={{ minHeight:"100vh", background:INK, color:"#e7e5e4", fontFamily:"'Barlow', system-ui, sans-serif" }}>
       <Fonts />
       <div style={{ position:"relative", maxWidth:1024, margin:"0 auto", padding:"28px 20px 120px" }}>
         <div style={{ position:"absolute", inset:0, pointerEvents:"none", background:"radial-gradient(circle at 50% 0%, rgba(255,45,53,0.10), transparent 45%)" }} />
         <div style={{ position:"relative" }}>
-          <Header mode={mode} onHome={() => { try { window.history.replaceState({}, "", window.location.pathname); } catch (e) {} setMode(null); }} onFeedback={() => setFeedbackOpen(true)} />
+          <Header mode={mode} onHome={() => { try { window.history.replaceState({}, "", window.location.pathname); } catch (e) {} setMode(null); }} onFeedback={() => setFeedbackOpen(true)} onGuide={() => setGuideOpen(true)} />
           {mode === null && <Home setMode={setMode} />}
           {mode === "draft" && <DraftMode />}
           {mode === "spin" && <SpinMode />}
@@ -492,6 +493,7 @@ export default function App() {
       </div>
       <AdBanner />
       {feedbackOpen && <FeedbackModal currentMode={mode} onClose={() => setFeedbackOpen(false)} />}
+      {guideOpen && <SystemGuideModal onClose={() => setGuideOpen(false)} />}
       <Analytics />
       <SpeedInsights />
     </div>
@@ -590,11 +592,185 @@ function HowToPlayButton({ onClick }) {
   );
 }
 
+// ─── SYSTEM GUIDE ────────────────────────────────────────────────────────────
+// Full explainer for how scoring actually works — role fit, signature bonus,
+// the counter web, and tier tag caps. Opened via the "📖 Guide" header button.
+function SystemGuideModal({ onClose }) {
+  const [tab, setTab] = useState("roles");
+  const TABS = [
+    { id:"roles",    label:"Role Fit" },
+    { id:"signature",label:"Signature" },
+    { id:"counters", label:"Counters" },
+    { id:"tiers",    label:"Tier Caps" },
+  ];
+
+  return (
+    <div onClick={onClose} style={{ position:"fixed", inset:0, zIndex:100, background:"rgba(0,0,0,0.75)",
+      display:"flex", alignItems:"center", justifyContent:"center", backdropFilter:"blur(2px)", padding:16 }}>
+      <div onClick={(e)=>e.stopPropagation()} className="slam"
+        style={{ width:"100%", maxWidth:600, maxHeight:"88vh", overflowY:"auto", background:"#141519",
+          borderRadius:18, border:"1px solid rgba(255,255,255,0.12)", padding:"20px 20px 26px" }}>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:4 }}>
+          <div className="a" style={{ fontSize:26, color:"#f5f5f4" }}>HOW SCORING WORKS</div>
+          <button onClick={onClose} className="c" style={{ background:"transparent", border:"none", color:"#78716c", fontSize:22, cursor:"pointer", padding:4, lineHeight:1 }}>✕</button>
+        </div>
+        <p className="c" style={{ fontSize:13, color:"#a8a29e", marginTop:6, marginBottom:16, lineHeight:1.5 }}>
+          Every fighter's final score in a battle comes from four layers stacked together. Flip through each tab below.
+        </p>
+
+        <div style={{ display:"flex", gap:6, marginBottom:18, flexWrap:"wrap" }}>
+          {TABS.map((t) => (
+            <button key={t.id} onClick={() => setTab(t.id)} className="c"
+              style={{ padding:"7px 14px", borderRadius:999, fontSize:12, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em",
+                cursor:"pointer", border: tab===t.id?`1px solid ${RED}`:"1px solid rgba(255,255,255,0.14)",
+                background: tab===t.id?"rgba(255,45,53,0.12)":"rgba(255,255,255,0.03)", color: tab===t.id?"#ff8a8f":"#a8a29e" }}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {tab === "roles" && <GuideRoles />}
+        {tab === "signature" && <GuideSignature />}
+        {tab === "counters" && <GuideCounters />}
+        {tab === "tiers" && <GuideTiers />}
+      </div>
+    </div>
+  );
+}
+
+function GuideSection({ title, children }) {
+  return (
+    <div style={{ marginBottom:18 }}>
+      <div className="c" style={{ fontSize:12, textTransform:"uppercase", letterSpacing:"0.15em", color:RED, fontWeight:700, marginBottom:8 }}>{title}</div>
+      {children}
+    </div>
+  );
+}
+
+function GuideRoles() {
+  return (
+    <div>
+      <GuideSection title="How role fit works">
+        <p className="c" style={{ fontSize:13, color:"#d6d3d1", lineHeight:1.6, marginBottom:10 }}>
+          Every role "wants" a few tags. When you place a fighter into a role, the game checks how many of their tags match:
+        </p>
+        <div style={{ display:"flex", flexDirection:"column", gap:6, marginBottom:12 }}>
+          <FitRow tone="great" label="2+ matching tags" val="Perfect fit" mult="+18%" />
+          <FitRow tone="good" label="1 matching tag" val="Good fit" mult="+8%" />
+          <FitRow tone="bad" label="0 matching tags" val="Misfit" mult="−15%" />
+        </div>
+        <p className="c" style={{ fontSize:12, color:"#78716c", lineHeight:1.5 }}>
+          These percentages multiply the fighter's base rating up or down — so the same character can score very differently depending on which role you put them in.
+        </p>
+      </GuideSection>
+      <GuideSection title="What each role wants">
+        <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+          {ROLES.map((r) => (
+            <div key={r.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 10px", borderRadius:8, background:"rgba(255,255,255,0.03)" }}>
+              <span style={{ height:8, width:8, borderRadius:999, background:r.color, flexShrink:0 }} />
+              <span className="c" style={{ fontWeight:700, fontSize:13, color:"#f5f5f4", minWidth:100 }}>{r.name}</span>
+              <div style={{ display:"flex", gap:4, flexWrap:"wrap" }}>{r.wants.map((t)=><Tag key={t} t={t} small />)}</div>
+            </div>
+          ))}
+        </div>
+      </GuideSection>
+    </div>
+  );
+}
+function FitRow({ tone, label, val, mult }) {
+  const color = tone==="great" ? "#4ade80" : tone==="good" ? "#93c5fd" : "#f87171";
+  return (
+    <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"8px 12px", borderRadius:8, background:"rgba(255,255,255,0.03)", border:`1px solid ${color}33` }}>
+      <span className="c" style={{ fontSize:13, color:"#a8a29e" }}>{label}</span>
+      <span className="c" style={{ fontSize:13, fontWeight:700, color }}>{val} · {mult}</span>
+    </div>
+  );
+}
+
+function GuideSignature() {
+  return (
+    <div>
+      <GuideSection title="Signature role bonus">
+        <p className="c" style={{ fontSize:13, color:"#d6d3d1", lineHeight:1.6, marginBottom:10 }}>
+          Every fighter has one canonical role — the one they're known for in their series. Placing them there grants an extra <b style={{color:"#4ade80"}}>+8%</b> on top of their tag-fit bonus.
+        </p>
+        <p className="c" style={{ fontSize:13, color:"#d6d3d1", lineHeight:1.6, marginBottom:10 }}>
+          This stacks with role fit — so a fighter in their signature role with 2+ matching tags gets <b>Perfect fit + Signature</b>, roughly a +26% swing over their base rating.
+        </p>
+        <p className="c" style={{ fontSize:13, color:"#d6d3d1", lineHeight:1.6 }}>
+          Even a misfit placement gets bumped up to neutral if it's their signature role — the game won't let lore-accurate placement be actively punished.
+        </p>
+      </GuideSection>
+      <GuideSection title="Where to see it">
+        <p className="c" style={{ fontSize:13, color:"#a8a29e", lineHeight:1.6 }}>
+          Look for the "· Signature" label next to a fighter's fit rating when you place them — that's this bonus applying. The spin reel also shows "Best as [Role]" as a hint before you place anyone.
+        </p>
+      </GuideSection>
+    </div>
+  );
+}
+
+function GuideCounters() {
+  return (
+    <div>
+      <GuideSection title="The counter web">
+        <p className="c" style={{ fontSize:13, color:"#d6d3d1", lineHeight:1.6, marginBottom:10 }}>
+          Beyond role fit, your whole <b>team</b> can earn bonus points by out-countering the opponent's tags. If your team fields more of a "winning" tag than the opponent fields of the tag it beats, you earn <b style={{color:"#4ade80"}}>+{"15"} points</b> per edge.
+        </p>
+        <p className="c" style={{ fontSize:13, color:"#a8a29e", lineHeight:1.6, marginBottom:14 }}>
+          This is why a lower-rated team can beat a higher-rated one — the right tag mix against a specific opponent matters as much as raw power.
+        </p>
+      </GuideSection>
+      <GuideSection title="Every counter relationship">
+        <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+          {COUNTERS.map((c) => (
+            <div key={c.win+c.lose} style={{ display:"flex", alignItems:"center", gap:8, padding:"7px 10px", borderRadius:8, background:"rgba(255,255,255,0.03)" }}>
+              <Tag t={c.win} small /><span className="c" style={{ color:"#4ade80", fontWeight:700, fontSize:13 }}>beats</span><Tag t={c.lose} small />
+            </div>
+          ))}
+        </div>
+      </GuideSection>
+    </div>
+  );
+}
+
+function GuideTiers() {
+  const tiers = [
+    { t:"SS", cap:9, color:TIER_COLOR.SS },
+    { t:"S",  cap:7, color:TIER_COLOR.S },
+    { t:"A",  cap:6, color:TIER_COLOR.A },
+    { t:"B",  cap:5, color:TIER_COLOR.B },
+    { t:"C",  cap:4, color:TIER_COLOR.C },
+  ];
+  return (
+    <div>
+      <GuideSection title="Tier tag caps">
+        <p className="c" style={{ fontSize:13, color:"#d6d3d1", lineHeight:1.6, marginBottom:14 }}>
+          A fighter's tier limits how many combat tags they can carry — higher tiers are more versatile and can trigger more counter edges at once.
+        </p>
+        <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+          {tiers.map((x) => (
+            <div key={x.t} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"9px 12px", borderRadius:8, background:"rgba(255,255,255,0.03)" }}>
+              <span className="a" style={{ fontSize:16, color:"#0b0c10", background:x.color, padding:"1px 10px", borderRadius:5 }}>{x.t}</span>
+              <span className="c" style={{ fontSize:13, color:"#a8a29e" }}>up to <b style={{color:"#f5f5f4"}}>{x.cap}</b> tags</span>
+            </div>
+          ))}
+        </div>
+      </GuideSection>
+      <GuideSection title="Why it matters">
+        <p className="c" style={{ fontSize:13, color:"#a8a29e", lineHeight:1.6 }}>
+          An SS-tier fighter carrying 9 tags can plug into far more counter matchups than a C-tier fighter capped at 4 — part of what makes top-tier fighters worth their higher draft cost.
+        </p>
+      </GuideSection>
+    </div>
+  );
+}
+
 
 // In-app feedback form. Submits to Web3Forms (free, no backend needed) which
 // emails the submission straight to you. Get a free access key at web3forms.com
 // (no account required beyond an email to receive the key) and paste it below.
-const WEB3FORMS_KEY = "0be791f0-f6ee-4c1a-802b-8c5abb172caf"; // <-- paste your key from web3forms.com
+const WEB3FORMS_KEY = "YOUR_WEB3FORMS_ACCESS_KEY"; // <-- paste your key from web3forms.com
 
 const FEEDBACK_CATEGORIES = [
   { id:"bug",       label:"🐞 Bug Report",        hint:"Something broke or didn't work as expected" },
@@ -772,7 +948,7 @@ function Fonts() {
   `}</style>;
 }
 
-function Header({ mode, onHome, onFeedback }) {
+function Header({ mode, onHome, onFeedback, onGuide }) {
   return (
     <header style={{ marginBottom:28, display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, flexWrap:"wrap" }}>
       <div style={{ display:"flex", alignItems:"center", gap:12, cursor: mode?"pointer":"default" }} onClick={mode?onHome:undefined}>
@@ -780,7 +956,13 @@ function Header({ mode, onHome, onFeedback }) {
           ANIME<span style={{ color:RED }}>VS</span>
         </h1>
       </div>
-      <div style={{ display:"flex", alignItems:"center", gap:10, flexShrink:0 }}>
+      <div style={{ display:"flex", alignItems:"center", gap:10, flexShrink:0, flexWrap:"wrap" }}>
+        <button onClick={onGuide} className="c"
+          style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, textTransform:"uppercase", letterSpacing:"0.1em",
+            fontWeight:700, padding:"7px 12px", borderRadius:8, border:"1px solid rgba(255,255,255,0.14)",
+            background:"rgba(255,255,255,0.04)", color:"#a8a29e", cursor:"pointer", whiteSpace:"nowrap" }}>
+          📖 Guide
+        </button>
         <button onClick={onFeedback} className="c"
           style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, textTransform:"uppercase", letterSpacing:"0.1em",
             fontWeight:700, padding:"7px 12px", borderRadius:8, border:"1px solid rgba(255,255,255,0.14)",
@@ -788,7 +970,7 @@ function Header({ mode, onHome, onFeedback }) {
           💬 Feedback
         </button>
         {/* Small, quiet support link — swap the href for your real Ko-fi page */}
-        <a href="https://ko-fi.com/animevs" target="_blank" rel="noopener noreferrer"
+        <a href="https://ko-fi.com/YOUR_KOFI_USERNAME" target="_blank" rel="noopener noreferrer"
           className="c" style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, textTransform:"uppercase", letterSpacing:"0.1em",
             fontWeight:700, padding:"7px 12px", borderRadius:8, border:"1px solid rgba(255,45,53,0.3)",
             background:"rgba(255,45,53,0.08)", color:"#ff8a8f", textDecoration:"none", whiteSpace:"nowrap" }}>
