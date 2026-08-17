@@ -950,37 +950,42 @@ function Fonts() {
 
 function Header({ mode, onHome, onFeedback, onGuide }) {
   return (
-    <header style={{ marginBottom:28, display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, flexWrap:"wrap" }}>
+    <header style={{ marginBottom:28, display:"flex", alignItems:"center", justifyContent:"space-between", gap:8, flexWrap:"wrap" }}>
+      <style>{`
+        .hdrBtn .hdrLabel { display:none; }
+        @media(min-width:480px){ .hdrBtn .hdrLabel { display:inline; } .hdrBtn { padding:7px 12px!important; } }
+        .hdrBtn { padding:7px 8px!important; }
+      `}</style>
       <div style={{ display:"flex", alignItems:"center", gap:12, cursor: mode?"pointer":"default" }} onClick={mode?onHome:undefined}>
         <h1 className="a" style={{ fontSize:40, lineHeight:1, margin:0, color:"#f5f5f4", letterSpacing:"-0.5px" }}>
           ANIME<span style={{ color:RED }}>VS</span>
         </h1>
       </div>
-      <div style={{ display:"flex", alignItems:"center", gap:10, flexShrink:0, flexWrap:"wrap" }}>
-        <button onClick={onGuide} className="c"
+      <div style={{ display:"flex", alignItems:"center", gap:6, flexShrink:0, flexWrap:"wrap" }}>
+        <button onClick={onGuide} className="c hdrBtn"
           style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, textTransform:"uppercase", letterSpacing:"0.1em",
-            fontWeight:700, padding:"7px 12px", borderRadius:8, border:"1px solid rgba(255,255,255,0.14)",
+            fontWeight:700, borderRadius:8, border:"1px solid rgba(255,255,255,0.14)",
             background:"rgba(255,255,255,0.04)", color:"#a8a29e", cursor:"pointer", whiteSpace:"nowrap" }}>
-          📖 Guide
+          📖<span className="hdrLabel">Guide</span>
         </button>
-        <button onClick={onFeedback} className="c"
+        <button onClick={onFeedback} className="c hdrBtn"
           style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, textTransform:"uppercase", letterSpacing:"0.1em",
-            fontWeight:700, padding:"7px 12px", borderRadius:8, border:"1px solid rgba(255,255,255,0.14)",
+            fontWeight:700, borderRadius:8, border:"1px solid rgba(255,255,255,0.14)",
             background:"rgba(255,255,255,0.04)", color:"#a8a29e", cursor:"pointer", whiteSpace:"nowrap" }}>
-          💬 Feedback
+          💬<span className="hdrLabel">Feedback</span>
         </button>
         {/* Small, quiet support link — swap the href for your real Ko-fi page */}
         <a href="https://ko-fi.com/animevs" target="_blank" rel="noopener noreferrer"
-          className="c" style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, textTransform:"uppercase", letterSpacing:"0.1em",
-            fontWeight:700, padding:"7px 12px", borderRadius:8, border:"1px solid rgba(255,45,53,0.3)",
+          className="c hdrBtn" style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, textTransform:"uppercase", letterSpacing:"0.1em",
+            fontWeight:700, borderRadius:8, border:"1px solid rgba(255,45,53,0.3)",
             background:"rgba(255,45,53,0.08)", color:"#ff8a8f", textDecoration:"none", whiteSpace:"nowrap" }}>
-          ☕ Support the dev
+          ☕<span className="hdrLabel">Support the dev</span>
         </a>
         {mode && (
-          <button onClick={onHome} className="c darkBtn"
-            style={{ fontSize:13, textTransform:"uppercase", letterSpacing:"0.15em", fontWeight:700, padding:"8px 16px", borderRadius:8,
+          <button onClick={onHome} className="c hdrBtn darkBtn"
+            style={{ fontSize:12, textTransform:"uppercase", letterSpacing:"0.1em", fontWeight:700, borderRadius:8,
               border:"1px solid rgba(255,255,255,0.15)", background:"rgba(255,255,255,0.05)", color:"#d6d3d1", cursor:"pointer" }}>
-            ← Modes
+            ←<span className="hdrLabel"> Modes</span>
           </button>
         )}
       </div>
