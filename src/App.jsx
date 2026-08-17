@@ -429,6 +429,45 @@ function decodeTeam(code){
     return { team };
   } catch(e){ return { error:"Could not read that code" }; }
 }
+
+// ─── RESULT CODEC (team + rung reached, for shareable snapshot links) ───────
+// Reuses the same 11-bit-per-slot team packing, plus 4 bits for rung reached
+// (0-10 fits in 4 bits). Separate "R" version tag so it's never confused with
+// a live PvP challenge code.
+function encodeResult(team, reached){
+  const ordered = CODEC_ROLES.map((rid) => team.find((t) => t.roleId === rid));
+  if (ordered.some((m) => !m)) return null;
+  let bits = [];
+  for (const m of ordered){
+    const ci = SORTED_IDS.indexOf(m.character.id), ri = CODEC_ROLES.indexOf(m.roleId);
+    for (let b=7;b>=0;b--) bits.push((ci>>b)&1);
+    for (let b=2;b>=0;b--) bits.push((ri>>b)&1);
+  }
+  for (let b=3;b>=0;b--) bits.push((reached>>b)&1); // 4 bits for rung 0-10, right after team bits
+  const bytes=[];
+  for (let i=0;i<bits.length;i+=8){ let byte=0; for(let j=0;j<8;j++) byte=(byte<<1)|(bits[i+j]||0); bytes.push(byte); }
+  const body=_b64url(bytes);
+  return "R1"+body+_checksum(body);
+}
+function decodeResult(code){
+  try{
+    if(!code || code.slice(0,2)!=="R1") return { error:"Not a valid result code" };
+    const body=code.slice(2,-1), cs=code.slice(-1);
+    if(_checksum(body)!==cs) return { error:"Code looks mistyped — check it and try again" };
+    const bytes=_unb64url(body);
+    let bits=[]; bytes.forEach((byte)=>{ for(let b=7;b>=0;b--) bits.push((byte>>b)&1); });
+    const team=[];
+    for(let s=0;s<SLOT_COUNT;s++){
+      let ci=0; for(let b=0;b<8;b++) ci=(ci<<1)|bits[s*11+b];
+      let ri=0; for(let b=0;b<3;b++) ri=(ri<<1)|bits[s*11+8+b];
+      const id=SORTED_IDS[ci]; const character=byId(id);
+      if(!character) return { error:"Code references an unknown fighter" };
+      team.push({ character, roleId: CODEC_ROLES[ri] });
+    }
+    let reached=0; const base=SLOT_COUNT*11; for(let b=0;b<4;b++) reached=(reached<<1)|bits[base+b];
+    return { team, reached };
+  } catch(e){ return { error:"Could not read that code" }; }
+}
 function mulberry32(a) {
   return function () {
     a |= 0; a = (a + 0x6D2B79F5) | 0;
@@ -468,14 +507,16 @@ const TAG_STYLE = {
 
 // ─── ROOT ───────────────────────────────────────────────────────────────────
 export default function App() {
-  // If the page was opened via a challenge link (?vs=CODE), start straight in VS mode.
+  // If the page was opened via a challenge link (?vs=CODE) or a shared result
+  // (?result=CODE), start straight in the right place.
   const [mode, setMode] = useState(() => {
     try {
       const params = new URLSearchParams(window.location.search);
       if (params.get("vs")) return "pvp";
+      if (params.get("result")) return "result";
     } catch (e) {}
     return null;
-  }); // null | "draft" | "spin" | "pvp" | "edit"
+  }); // null | "draft" | "spin" | "pvp" | "result"
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
   return (
@@ -489,6 +530,7 @@ export default function App() {
           {mode === "draft" && <DraftMode />}
           {mode === "spin" && <SpinMode />}
           {mode === "pvp" && <PvpMode />}
+          {mode === "result" && <SharedResultView setMode={setMode} />}
         </div>
       </div>
       <AdBanner />
@@ -1206,6 +1248,84 @@ function BattleSequence({ team, run, onDone }) {
   );
 }
 
+// Landing view for a shared result link (?result=CODE). Read-only snapshot of
+// someone else's climb, with a clear call to action to build your own team.
+function SharedResultView({ setMode }) {
+  const [decoded, setDecoded] = useState(null); // {team, reached} | null (loading) 
+  const [error, setError] = useState("");
+
+  React.useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const code = params.get("result");
+      const res = decodeResult((code || "").trim());
+      if (res.error) setError(res.error);
+      else setDecoded(res);
+    } catch (e) { setError("Could not read that result link."); }
+  }, []);
+
+  function playNow() {
+    try { window.history.replaceState({}, "", window.location.pathname); } catch (e) {}
+    setMode(null);
+  }
+
+  if (error) {
+    return (
+      <div className="tIn" style={{ maxWidth:480, margin:"60px auto", textAlign:"center" }}>
+        <div className="a" style={{ fontSize:26, color:"#f5f5f4", marginBottom:8 }}>LINK UNREADABLE</div>
+        <p className="c" style={{ color:"#a8a29e", marginBottom:20 }}>{error}</p>
+        <button onClick={playNow} className="a redBtn" style={{ padding:"14px 28px", borderRadius:12, background:RED, color:"#fff", border:"none", cursor:"pointer", fontSize:17 }}>
+          Play animeVS →
+        </button>
+      </div>
+    );
+  }
+  if (!decoded) return null; // brief flash while decoding
+
+  const { team, reached } = decoded;
+  const champion = reached === LADDER.length;
+
+  return (
+    <div className="tIn" style={{ maxWidth:640, margin:"0 auto" }}>
+      <div className="c" style={{ textAlign:"center", fontSize:13, color:"#a8a29e", marginBottom:16, textTransform:"uppercase", letterSpacing:"0.15em" }}>
+        A friend's animeVS run
+      </div>
+      <div className="slam" style={{ position:"relative", overflow:"hidden", borderRadius:16, padding:32, marginBottom:20,
+        border: champion?`1px solid ${RED}`:"1px solid rgba(255,255,255,0.12)",
+        background: champion?"linear-gradient(160deg,#2a1608,#0b0c10 60%)":"linear-gradient(160deg,#17181d,#0b0c10 60%)" }}>
+        <div className="a" style={{ position:"absolute", right:-16, top:-24, fontSize:130, lineHeight:1, color:"rgba(255,255,255,0.035)", userSelect:"none" }}>VS</div>
+        <div style={{ position:"relative" }}>
+          <div className="c" style={{ textTransform:"uppercase", letterSpacing:"0.3em", fontSize:12, color:"#a8a29e", marginBottom:4 }}>animeVS</div>
+          <div className="a" style={{ fontSize:52, lineHeight:1, marginBottom:8, color: champion?"#fbbf24":"#f5f5f4" }}>
+            {champion?"CHAMPION":`RUNG ${reached}`}{!champion && <span style={{ color:"#78716c", fontSize:30 }}>/{LADDER.length}</span>}
+          </div>
+          <p className="c" style={{ color:"#a8a29e", marginBottom:20, fontSize:16 }}>
+            {champion?"Toppled every dynasty. Flawless run.":reached===0?"Fell at the first gate.":`Climbed ${reached} before the wall.`}
+          </p>
+          <div style={{ display:"flex", gap:6, marginBottom:20 }}>
+            {LADDER.map((r)=><div key={r.rung} style={{ height:8, flex:1, borderRadius:999, background: r.rung>reached?"rgba(255,255,255,0.09)":RED }} />)}
+          </div>
+          <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+            {team.map(m=>(
+              <span key={m.roleId} className="c" style={{ fontSize:13, padding:"3px 9px", borderRadius:6, background:"rgba(0,0,0,0.45)", border:`1px solid ${roleById(m.roleId).color}55`, color:"#d6d3d1" }}>
+                <span style={{ color:roleById(m.roleId).color, fontWeight:700 }}>{roleById(m.roleId).name}:</span> {m.character.name} {fittedRating(m.character,m.roleId)}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ textAlign:"center", borderRadius:16, padding:"28px 20px", border:"1px solid rgba(255,45,53,0.3)", background:"rgba(255,45,53,0.06)" }}>
+        <div className="a" style={{ fontSize:24, color:"#f5f5f4", marginBottom:6 }}>Think you can do better?</div>
+        <p className="c" style={{ color:"#a8a29e", fontSize:14, marginBottom:18 }}>Draft your own 7-fighter squad and climb the same 10-rung gauntlet.</p>
+        <button onClick={playNow} className="a redBtn" style={{ padding:"14px 32px", borderRadius:12, background:RED, color:"#fff", border:"none", cursor:"pointer", fontSize:18, boxShadow:"0 8px 30px -8px rgba(255,45,53,0.7)" }}>
+          Build your own team →
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function ClimbResult({ team, onReplay, replayLabel }) {
   const run = useMemo(() => {
     let reached = 0;
@@ -1225,8 +1345,13 @@ function ClimbResult({ team, onReplay, replayLabel }) {
     return <BattleSequence team={team} run={run} onDone={() => setPhase("results")} />;
   }
 
-  const shareText = `animeVS\n${champion?"CHAMPION - flawless climb!":`Reached Rung ${reached}/${LADDER.length}`}\n${rungs.map(r=>`${r.cleared&&r.attempted?"[x]":r.attempted?"[ ]":"[-]"} R${r.rung} ${r.title}`).join("\n")}\nSquad: ${team.map(m=>`${m.character.name} (${roleById(m.roleId).name})`).join(", ")}`;
-  function copyShare(){ navigator.clipboard?.writeText(shareText).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),1800);}); }
+  function shareLink(){
+    const code = encodeResult(team, reached);
+    if (!code) return;
+    let url = code;
+    try { url = `${window.location.origin}${window.location.pathname}?result=${code}`; } catch (e) {}
+    navigator.clipboard?.writeText(url).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),1800);});
+  }
 
   return (
     <div style={{ maxWidth:640, margin:"0 auto" }}>
@@ -1255,8 +1380,8 @@ function ClimbResult({ team, onReplay, replayLabel }) {
         </div>
       </div>
       <div style={{ display:"flex", gap:12, marginBottom:24 }}>
-        <button onClick={copyShare} className="c darkBtn" style={{ flex:1, textTransform:"uppercase", letterSpacing:"0.15em", fontSize:14, fontWeight:700, padding:12, borderRadius:10, border:"1px solid rgba(255,255,255,0.15)", background:"rgba(255,255,255,0.05)", color:"#e7e5e4", cursor:"pointer" }}>
-          {copied?"✓ Copied!":"Copy result"}
+        <button onClick={shareLink} className="c darkBtn" style={{ flex:1, textTransform:"uppercase", letterSpacing:"0.15em", fontSize:14, fontWeight:700, padding:12, borderRadius:10, border:"1px solid rgba(255,255,255,0.15)", background:"rgba(255,255,255,0.05)", color:"#e7e5e4", cursor:"pointer" }}>
+          {copied?"✓ Link copied!":"Share result"}
         </button>
         <button onClick={onReplay} className="a redBtn" style={{ flex:1, fontSize:18, letterSpacing:"0.03em", padding:12, borderRadius:10, background:RED, color:"#fff", border:"none", cursor:"pointer" }}>
           {replayLabel}
