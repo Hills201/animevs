@@ -2045,12 +2045,25 @@ function PvpMode() {
     if (!roomCode || !roomRole || !roomState) return;
     const bothLocked = !!roomState.player_a_ready && !!roomState.player_b_ready;
     if (!bothLocked) return;
-    const otherCode = roomRole === "a" ? roomState.player_b_team : roomState.player_a_team;
-    if (!otherCode) return;
-    const decoded = decodeTeam(otherCode);
-    if (decoded.error) { setRoomError(decoded.error); return; }
-    setOppTeam(decoded.team);
-    setOppCode(otherCode);
+
+    const myRoomCode = roomRole === "a" ? roomState.player_a_team : roomState.player_b_team;
+    const otherRoomCode = roomRole === "a" ? roomState.player_b_team : roomState.player_a_team;
+    if (!myRoomCode || !otherRoomCode) return;
+
+    const mine = decodeTeam(myRoomCode);
+    const theirs = decodeTeam(otherRoomCode);
+    if (mine.error || theirs.error) {
+      setRoomError(mine.error || theirs.error);
+      return;
+    }
+
+    // Keep the local view authoritative, but fall back to the encoded room
+    // team if a player reloads after locking in.
+    setMyCode(myRoomCode);
+    if (JSON.stringify(myTeam) !== JSON.stringify(mine.team)) setMyTeam(mine.team.reduce((acc, m) => ({ ...acc, [m.roleId]: m }), {}));
+    setOppTeam(theirs.team);
+    setOppCode(otherRoomCode);
+    setRoomError("");
     setStage("reveal");
   }, [roomCode, roomRole, roomState]);
 
@@ -2322,8 +2335,12 @@ function PvpMode() {
   // ── REVEAL: show my code; if opponent present, resolve ──
   const myTeamArr = ROLES.map((r) => myTeam[r.id]);
   const result = oppTeam ? resolvePvP(myTeamArr, oppTeam) : null;
-  const iWon = result && result.winner === "a";
+  const localSide = roomCode && roomRole === "b" ? "b" : "a";
+  const iWon = result && result.winner === localSide;
   const tie = result && result.winner === "tie";
+  const localTeamScore = result ? result[localSide] : null;
+  const opponentSide = localSide === "a" ? "b" : "a";
+  const opponentScore = result ? result[opponentSide] : null;
 
   function copyMyCode(){ navigator.clipboard?.writeText(myCode).then(()=>{ setCopied(true); setTimeout(()=>setCopied(false),1800); }); }
   function copyMyLink(){ navigator.clipboard?.writeText(challengeLink(myCode)).then(()=>{ setLinkCopied(true); setTimeout(()=>setLinkCopied(false),1800); }); }
@@ -2388,12 +2405,12 @@ function PvpMode() {
               {tie?"DEAD HEAT":iWon?"VICTORY":"DEFEAT"}
             </div>
             <div className="c" style={{ fontSize:16, color:"#a8a29e", marginTop:8 }}>
-              You {result.a.total.toFixed(0)} · {result.b.total.toFixed(0)} Opponent
+              You {localTeamScore.total.toFixed(0)} · {opponentScore.total.toFixed(0)} Opponent
             </div>
           </div>
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:0 }}>
-            <TeamColumn label="YOUR TEAM" team={myTeamArr} score={result.a} side="a" win={iWon} />
-            <TeamColumn label="OPPONENT" team={oppTeam} score={result.b} side="b" win={result.winner==="b"} />
+            <TeamColumn label="YOUR TEAM" team={myTeamArr} score={localTeamScore} side={localSide} win={iWon} />
+            <TeamColumn label="OPPONENT" team={oppTeam} score={opponentScore} side={opponentSide} win={result.winner===opponentSide} />
           </div>
         </div>
       )}
