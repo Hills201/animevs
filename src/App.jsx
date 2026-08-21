@@ -1480,7 +1480,7 @@ function ClimbResult({ team, onReplay, replayLabel }) {
 // what `renderReel` shows (1 char vs 5 options) and how a character is chosen.
 function SpinStage({
   title, subtitle, team, activeChar, onPlace, allFilled, onClimb,
-  reelArea, belowReel, filledCount, footNote, onHelp,
+  reelArea, belowReel, filledCount, footNote, onHelp, lockedIn=false,
 }) {
   return (
     <div className="tIn">
@@ -1519,9 +1519,9 @@ function SpinStage({
           </div>
 
           {allFilled ? (
-            <button onClick={onClimb} className="a redBtn"
-              style={{ marginTop:16, width:"100%", fontSize:20, letterSpacing:"0.03em", padding:"14px", borderRadius:10, background:RED, color:"#fff", border:"none", cursor:"pointer", boxShadow:"0 8px 30px -8px rgba(255,45,53,0.7)" }}>
-              LOCK IN TEAM →
+            <button onClick={onClimb} disabled={lockedIn} className="a redBtn"
+              style={{ marginTop:16, width:"100%", fontSize:20, letterSpacing:"0.03em", padding:"14px", borderRadius:10, background:lockedIn?"#166534":RED, color:"#fff", border:"none", cursor:lockedIn?"default":"pointer", boxShadow:lockedIn?"none":"0 8px 30px -8px rgba(255,45,53,0.7)", opacity:lockedIn?0.95:1 }}>
+              {lockedIn ? "LOCKED IN ✓" : "LOCK IN TEAM →"}
             </button>
           ) : activeChar ? (
             <p className="c" style={{ marginTop:12, fontSize:13, color:"#a8a29e", textAlign:"center" }}>
@@ -1566,6 +1566,7 @@ function SpinMode() {
   const [team, setTeam] = useState({});          // roleId -> {character, roleId}
   const [spinCount, setSpinCount] = useState(0);
   const [rerollsUsed, setRerollsUsed] = useState(0);
+  const [pvpLocked, setPvpLocked] = useState(false);
   const [current, setCurrent] = useState(null);
   const [phase, setPhase] = useState("play");
   const { spinning, reelFace, run } = useReel(seed);
@@ -2075,7 +2076,8 @@ function PvpMode() {
         ? { player_a_team: code, player_a_ready: true }
         : { player_b_team: code, player_b_ready: true };
       const { error } = await supabase.from("rooms").update(fields).eq("code", roomCode);
-      if (error) { setRoomError(error.message); return; }
+      if (error) { setRoomError(error.message); setPvpLocked(false); return; }
+      setPvpLocked(true);
       // Do not reveal here. The realtime effect waits for BOTH ready flags.
       return;
     }
@@ -2097,7 +2099,7 @@ function PvpMode() {
     try { if (roomCode) sessionStorage.removeItem(`animevs:room-role:${roomCode}`); } catch (e) {}
     setStage("menu"); setOppCode(""); setOppTeam(null); setOppError(""); setFromLink(false);
     setMyTeam({}); setMyCode(""); setCurrent(null); setSpinCount(0); setRerollsUsed(0); setPasteResult("");
-    setRoomCode(""); setRoomRole(null); setRoomState(null); setRoomError("");
+    setRoomCode(""); setRoomRole(null); setRoomState(null); setRoomError(""); setPvpLocked(false);
     try { window.history.replaceState({}, "", window.location.pathname); } catch (e) {}
   }
 
@@ -2216,7 +2218,7 @@ function PvpMode() {
         <SpinStage
           title="Versus — build hidden" subtitle="Your opponent can't see your picks."
           team={myTeam} activeChar={current} onPlace={placeInto}
-          allFilled={allFilled} onClimb={lockIn}
+          allFilled={allFilled} onClimb={lockIn} lockedIn={pvpLocked || !!(roomRole === "a" ? roomState?.player_a_ready : roomRole === "b" ? roomState?.player_b_ready : false)}
           reelArea={reelArea} belowReel={belowReel}
           filledCount={filledCount}
           footNote={`Rerolls left: ${rerollsLeft}/${MAX_REROLLS} · Roles filled: ${filledCount}/${ROLES.length}`}
