@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from "react";
 import { Analytics } from "@vercel/analytics/react";
 import { SpeedInsights } from "@vercel/speed-insights/react";
+import { supabase, supabaseConfigured } from "./supabaseClient.js";
 
 // ─── ROSTER (150) ───────────────────────────────────────────────────────────
 const CHARACTERS = [
@@ -45,7 +46,7 @@ const CHARACTERS = [
   { id:"gyomei-demon-slayer", name:"Gyomei", series:"Demon Slayer", tier:"S", cost:7, rating:89, tags:["aura","melee","energy","speed","mobility","element","range"], role:"vice", ability:{ name:"Battle Aura", type:"aura_buff", x:4 } },
   { id:"akaza-demon-slayer", name:"Akaza", series:"Demon Slayer", tier:"S", cost:6, rating:89, tags:["range","melee","mobility","speed","energy","regen","transform"], role:"damage", ability:{ name:"Battle Aura", type:"overwhelm", x:5 } },
   { id:"tengen-demon-slayer", name:"Tengen", series:"Demon Slayer", tier:"B", cost:6, rating:80, tags:["melee","mobility","speed","element"], role:"support", ability:{ name:"Titanic Frame", type:"role_synergy", x:5, role:"tank" } },
-  { id:"doma-demon-slayer", name:"Doma", series:"Demon Slayer", tier:"S", cost:8, rating:89, tags:["regen","melee","element","range","mobility","speed","transform"], role:"vice", ability:{ name:"Battle Aura", type:"counter_immune", x:3 } },
+  { id:"doma-demon-slayer", name:"Doma", series:"Demon Slayer", tier:"S", cost:8, rating:88, tags:["regen","melee","element","range","mobility","speed","transform"], role:"vice", ability:{ name:"Battle Aura", type:"counter_immune", x:3 } },
   { id:"rengoku-demon-slayer", name:"Rengoku", series:"Demon Slayer", tier:"B", cost:6, rating:80, tags:["melee","element","speed","aura","mobility"], role:"tank", ability:{ name:"Elemental Burst", type:"role_synergy", x:4, role:"damage" } },
   { id:"giyu-demon-slayer", name:"Giyu", series:"Demon Slayer", tier:"A", cost:7, rating:85, tags:["melee","mobility","speed","element","energy"], role:"support", ability:{ name:"Ranged Barrage", type:"role_synergy", x:4, role:"damage" } },
   { id:"shinobu-demon-slayer", name:"Shinobu", series:"Demon Slayer", tier:"B", cost:5, rating:81, tags:["element","melee","heal","mobility","speed"], role:"healer", ability:{ name:"Blinding Speed", type:"role_synergy", x:4, role:"support" } },
@@ -514,9 +515,10 @@ export default function App() {
       const params = new URLSearchParams(window.location.search);
       if (params.get("vs")) return "pvp";
       if (params.get("result")) return "result";
+      if (params.get("roomtest")) return "roomtest"; // TEMP: Supabase realtime proof-of-concept
     } catch (e) {}
     return null;
-  }); // null | "draft" | "spin" | "pvp" | "result"
+  }); // null | "draft" | "spin" | "pvp" | "result" | "roomtest"
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
   return (
@@ -531,6 +533,7 @@ export default function App() {
           {mode === "spin" && <SpinMode />}
           {mode === "pvp" && <PvpMode />}
           {mode === "result" && <SharedResultView setMode={setMode} />}
+          {mode === "roomtest" && <RoomTestView />}
         </div>
       </div>
       <AdBanner />
@@ -1250,6 +1253,137 @@ function BattleSequence({ team, run, onDone }) {
 
 // Landing view for a shared result link (?result=CODE). Read-only snapshot of
 // someone else's climb, with a clear call to action to build your own team.
+// ─── ROOM TEST (TEMPORARY) ───────────────────────────────────────────────────
+// Proof-of-concept for live PvP rooms via Supabase Realtime. Not linked from
+// the home screen — reachable at ?roomtest=1 while we build this out.
+// Once the real feature is built, this whole block gets removed.
+function genRoomCode() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no ambiguous chars
+  let s = "";
+  for (let i = 0; i < 6; i++) s += chars[Math.floor(Math.random() * chars.length)];
+  return s;
+}
+
+function RoomTestView() {
+  const [roomCode, setRoomCode] = useState("");
+  const [joinInput, setJoinInput] = useState("");
+  const [role, setRole] = useState(null); // "a" | "b" | null
+  const [roomState, setRoomState] = useState(null); // live row from Supabase
+  const [status, setStatus] = useState("idle"); // idle | creating | joining | connected | error
+  const [errorMsg, setErrorMsg] = useState("");
+
+  if (!supabaseConfigured) {
+    return (
+      <div className="tIn" style={{ maxWidth: 480, margin: "60px auto", textAlign: "center" }}>
+        <div className="a" style={{ fontSize: 24, color: "#f5f5f4", marginBottom: 8 }}>ROOM TEST</div>
+        <p className="c" style={{ color: "#a8a29e" }}>
+          Supabase isn't configured — missing VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY.
+        </p>
+      </div>
+    );
+  }
+
+  async function createRoom() {
+    setStatus("creating");
+    setErrorMsg("");
+    const code = genRoomCode();
+    const { error } = await supabase.from("rooms").insert({ code });
+    if (error) { setStatus("error"); setErrorMsg(error.message); return; }
+    setRoomCode(code);
+    setRole("a");
+    subscribeToRoom(code);
+  }
+
+  async function joinRoom() {
+    const code = joinInput.trim().toUpperCase();
+    if (!code) return;
+    setStatus("joining");
+    setErrorMsg("");
+    const { data, error } = await supabase.from("rooms").select("*").eq("code", code).single();
+    if (error || !data) { setStatus("error"); setErrorMsg("Room not found — check the code."); return; }
+    setRoomCode(code);
+    setRole("b");
+    subscribeToRoom(code);
+  }
+
+  function subscribeToRoom(code) {
+    setStatus("connected");
+    supabase
+      .channel(`room:${code}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "rooms", filter: `code=eq.${code}` },
+        (payload) => setRoomState(payload.new))
+      .subscribe();
+  }
+
+  // Once we know our role, mark ourselves ready in the row (simple presence test)
+  React.useEffect(() => {
+    if (!roomCode || !role) return;
+    const field = role === "a" ? "player_a_ready" : "player_b_ready";
+    supabase.from("rooms").update({ [field]: true }).eq("code", roomCode).then(({ error }) => {
+      if (error) setErrorMsg(error.message);
+    });
+    // fetch initial state too, in case the row changed before our subscription attached
+    supabase.from("rooms").select("*").eq("code", roomCode).single().then(({ data }) => {
+      if (data) setRoomState(data);
+    });
+  }, [roomCode, role]);
+
+  const bothReady = roomState?.player_a_ready && roomState?.player_b_ready;
+
+  return (
+    <div className="tIn" style={{ maxWidth: 520, margin: "0 auto" }}>
+      <div className="a" style={{ fontSize: 28, color: "#f5f5f4", marginBottom: 4 }}>ROOM TEST</div>
+      <p className="c" style={{ color: "#a8a29e", fontSize: 13, marginBottom: 24 }}>
+        Proof of concept — proving live presence works before building real PvP rooms on top of it.
+      </p>
+
+      {!roomCode ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <button onClick={createRoom} disabled={status === "creating"} className="a redBtn"
+            style={{ padding: "16px", borderRadius: 12, background: RED, color: "#fff", border: "none", cursor: "pointer", fontSize: 18 }}>
+            {status === "creating" ? "Creating…" : "Create Room"}
+          </button>
+          <div className="c" style={{ textAlign: "center", color: "#57534e", fontSize: 12 }}>— or —</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input value={joinInput} onChange={(e) => setJoinInput(e.target.value)} placeholder="Enter room code"
+              className="c" style={{ flex: 1, padding: "12px 14px", borderRadius: 10, background: "rgba(255,255,255,0.05)",
+                border: "1px solid rgba(255,255,255,0.14)", color: "#f5f5f4", fontSize: 16, outline: "none", textTransform: "uppercase" }} />
+            <button onClick={joinRoom} disabled={status === "joining"} className="c"
+              style={{ padding: "12px 20px", borderRadius: 10, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.14)", color: "#e7e5e4", cursor: "pointer", fontWeight: 700 }}>
+              Join
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div style={{ borderRadius: 16, padding: 24, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.03)" }}>
+          <div className="c" style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: "0.15em", color: "#78716c", marginBottom: 6 }}>Room code</div>
+          <div className="a" style={{ fontSize: 36, color: "#f5f5f4", marginBottom: 16, letterSpacing: "0.1em" }}>{roomCode}</div>
+          <div className="c" style={{ fontSize: 13, color: "#a8a29e", marginBottom: 16 }}>You are Player {role === "a" ? "A (host)" : "B (joined)"}</div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <PresenceDot label="Player A" ready={!!roomState?.player_a_ready} />
+            <PresenceDot label="Player B" ready={!!roomState?.player_b_ready} />
+          </div>
+          {bothReady && (
+            <div className="c" style={{ marginTop: 16, padding: 12, borderRadius: 10, background: "rgba(74,222,128,0.1)", border: "1px solid rgba(74,222,128,0.3)", color: "#4ade80", fontWeight: 700, textAlign: "center" }}>
+              ✓ Both players connected — realtime works!
+            </div>
+          )}
+        </div>
+      )}
+
+      {errorMsg && <div className="c" style={{ color: "#ef4444", fontSize: 13, marginTop: 12 }}>{errorMsg}</div>}
+    </div>
+  );
+}
+function PresenceDot({ label, ready }) {
+  return (
+    <div style={{ flex: 1, textAlign: "center", padding: 12, borderRadius: 10, background: ready ? "rgba(74,222,128,0.1)" : "rgba(255,255,255,0.03)", border: `1px solid ${ready ? "rgba(74,222,128,0.3)" : "rgba(255,255,255,0.1)"}` }}>
+      <div style={{ fontSize: 20 }}>{ready ? "🟢" : "⚪"}</div>
+      <div className="c" style={{ fontSize: 12, color: ready ? "#4ade80" : "#78716c", marginTop: 4 }}>{label}{ready ? " ready" : " waiting…"}</div>
+    </div>
+  );
+}
+
 function SharedResultView({ setMode }) {
   const [decoded, setDecoded] = useState(null); // {team, reached} | null (loading) 
   const [error, setError] = useState("");
