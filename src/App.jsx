@@ -193,22 +193,34 @@ const roleById = (id) => ROLES.find((r) => r.id === id);
 // Role-fit: count how many of the character's tags the role wants.
 // 2+ matches = perfect (+18%), 1 match = decent (+8%), 0 = misfit (-15%).
 // PLUS: if placed in the character's canonical/signature role, an extra +8%.
+function sameSignatureRole(character, roleId) {
+  if (!character?.role) return false;
+  if (character.role === roleId) return true;
+  // Support and Support II are one signature-role family.
+  return (character.role === "support" && roleId === "support2") || (character.role === "support2" && roleId === "support");
+}
 function roleFit(character, roleId) {
   const role = roleById(roleId);
-  if (!character || !role) return { mult: 1, label: "—", tone: "none" };
+  if (!character || !role) return { mult: 1, label: "—", tone: "none", matches: 0, signature: false };
   const matches = character.tags.filter((t) => role.wants.includes(t)).length;
-  const signature = character.role === roleId;
+  const signature = sameSignatureRole(character, roleId);
   let base;
   if (matches >= 2) base = { mult: 1.18, label: "Perfect fit", tone: "great", matches };
   else if (matches === 1) base = { mult: 1.08, label: "Good fit", tone: "good", matches };
   else base = { mult: 0.85, label: "Misfit", tone: "bad", matches };
   if (signature) {
-    return { ...base, mult: base.mult + 0.08, label: base.tone === "bad" ? "Signature role" : base.label + " · Signature", tone: base.tone === "bad" ? "good" : base.tone, signature: true };
+    // Signature placement is never punished by a tag-mismatch penalty.
+    // It still gets the +8% signature bonus on top of the neutral floor.
+    const sigBase = Math.max(1, base.mult);
+    return { ...base, mult: sigBase + 0.08, label: matches >= 2 ? "Perfect fit · Signature" : matches === 1 ? "Good fit · Signature" : "Signature role", tone: matches >= 2 ? "great" : "good", signature: true };
   }
   return { ...base, signature: false };
 }
 function fittedRating(character, roleId) {
   return Math.round(character.rating * roleFit(character, roleId).mult);
+}
+function displayedRating(member, ctx = {}) {
+  return fittedRatingWithAbility(member, ctx);
 }
 
 const BUDGET = 50;
@@ -998,8 +1010,9 @@ function Header({ mode, onHome, onFeedback, onGuide }) {
     <header style={{ marginBottom:28, display:"flex", alignItems:"center", justifyContent:"space-between", gap:8, flexWrap:"wrap" }}>
       <style>{`
         .hdrBtn .hdrLabel { display:none; }
+        .supportBtn .supportLabel { display:inline; }
+        .supportBtn { padding:7px 9px!important; font-size:11px!important; }
         @media(min-width:480px){ .hdrBtn .hdrLabel { display:inline; } .hdrBtn { padding:7px 12px!important; } }
-        .hdrBtn { padding:7px 8px!important; }
       `}</style>
       <div style={{ display:"flex", alignItems:"center", gap:12, cursor: mode?"pointer":"default" }} onClick={mode?onHome:undefined}>
         <h1 className="a" style={{ fontSize:40, lineHeight:1, margin:0, color:"#f5f5f4", letterSpacing:"-0.5px" }}>
@@ -1021,10 +1034,10 @@ function Header({ mode, onHome, onFeedback, onGuide }) {
         </button>
         {/* Small, quiet support link — swap the href for your real Ko-fi page */}
         <a href="https://ko-fi.com/animevs" target="_blank" rel="noopener noreferrer"
-          className="c hdrBtn" style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, textTransform:"uppercase", letterSpacing:"0.1em",
+          className="c hdrBtn supportBtn" style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, textTransform:"uppercase", letterSpacing:"0.1em",
             fontWeight:700, borderRadius:8, border:"1px solid rgba(255,45,53,0.3)",
             background:"rgba(255,45,53,0.08)", color:"#ff8a8f", textDecoration:"none", whiteSpace:"nowrap" }}>
-          ☕<span className="hdrLabel">Support the dev</span>
+          ☕<span className="supportLabel">Support the dev</span>
         </a>
         {mode && (
           <button onClick={onHome} className="c hdrBtn darkBtn"
@@ -1536,6 +1549,7 @@ function ClimbResult({ team, onReplay, replayLabel }) {
               </span>
             </div>
             {r.attempted && (
+              <>
               <div style={{ display:"grid", gridTemplateColumns:"1fr auto 1fr", alignItems:"center", gap:12 }}>
                 <div>
                   <div className="c" style={{ fontSize:10, textTransform:"uppercase", letterSpacing:"0.15em", color:"#a8a29e" }}>You</div>
@@ -1549,6 +1563,22 @@ function ClimbResult({ team, onReplay, replayLabel }) {
                   {r.them.edges.length>0 && <div style={{ fontSize:10, color:"#fda4af", lineHeight:1.3 }}>+{r.them.bonus} {r.them.edges.join(", ")}</div>}
                 </div>
               </div>
+              <div style={{ marginTop:10, display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+                <div style={{ borderRadius:8, padding:9, background:"rgba(255,255,255,0.025)", border:"1px solid rgba(255,255,255,0.06)" }}>
+                  {team.map((m) => {
+                    const shown = displayedRating(m, { rungNumber:r.rung, isHighest:m.character.rating === Math.max(...team.map((x)=>x.character.rating)) });
+                    const base = fittedRating(m.character, m.roleId);
+                    const delta = shown - base;
+                    return <div key={m.roleId} className="c" style={{ fontSize:10, color:delta>0?"#d8b4fe":"#78716c", display:"flex", justifyContent:"space-between", gap:8 }}>
+                      <span>{m.character.name}</span><b>{shown}{delta>0?` (+${delta})`:""}</b>
+                    </div>;
+                  })}
+                </div>
+                <div className="c" style={{ fontSize:10, color:"#78716c", padding:9, lineHeight:1.35 }}>
+                  Fighter ratings include role fit and rung-specific abilities. Bonuses such as <b style={{color:"#d8b4fe"}}>+X on rungs 6–10</b> are shown here as the purple delta.
+                </div>
+              </div>
+              </>
             )}
           </div>
         ))}
@@ -1759,7 +1789,7 @@ function SpinMode() {
 // ─── DRAFT MODE ──────────────────────────────────────────────────────────────
 // Spin → 5 options under a credit budget → pick one → place. 1 reroll.
 function DraftMode() {
-  const [seed] = useState(() => (Math.random()*1e9)|0);
+  const [seed, setSeed] = useState(() => (Math.random()*1e9)|0);
   const [team, setTeam] = useState({});           // roleId -> {character, roleId}
   const [spinCount, setSpinCount] = useState(0);
   const [options, setOptions] = useState(null);   // array of 5 chars, or null
@@ -1829,6 +1859,8 @@ function DraftMode() {
     setCurrent(null);
   }
   function reset() {
+    // A new draft gets a fresh draw seed so replay never reproduces the same opening five.
+    setSeed((Math.random()*1e9)|0);
     setTeam({}); setOptions(null); setCurrent(null); setSpinCount(0);
     setRerollsUsed(0); setRerollNonce(0); setPhase("play");
   }
@@ -1889,6 +1921,7 @@ function DraftMode() {
                     </div>
                   </div>
                   <div style={{ display:"flex", gap:4, marginTop:6, marginBottom:6, flexWrap:"wrap" }}>{c.tags.map((t)=><Tag key={t} t={t} small/>)}</div>
+                  <SignatureHint character={c} />
                   <AbilityChip ability={c.ability} small />
                   {/* spend preview */}
                   <div className="c" style={{ marginTop:8, fontSize:12, color: tooPricey?"#ef4444":"#78716c", borderTop:"1px solid rgba(255,255,255,0.06)", paddingTop:6, display:"flex", justifyContent:"space-between" }}>
