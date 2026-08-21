@@ -191,8 +191,8 @@ const ROLES = [
 const roleById = (id) => ROLES.find((r) => r.id === id);
 
 // Role-fit: count how many of the character's tags the role wants.
-// 2+ matches = perfect (+18%), 1 match = decent (+8%), 0 = misfit (-15%).
-// PLUS: if placed in the character's canonical/signature role, an extra +8%.
+// 2+ matches = perfect (+15 pts), 1 match = decent (+5 pts), 0 = misfit (+0).
+// PLUS: if placed in the character's canonical/signature role, an extra +10 pts.
 function sameSignatureRole(character, roleId) {
   if (!character?.role) return false;
   if (character.role === roleId) return true;
@@ -201,23 +201,21 @@ function sameSignatureRole(character, roleId) {
 }
 function roleFit(character, roleId) {
   const role = roleById(roleId);
-  if (!character || !role) return { mult: 1, label: "—", tone: "none", matches: 0, signature: false };
+  if (!character || !role) return { bonus: 0, label: "—", tone: "none", matches: 0, signature: false };
   const matches = character.tags.filter((t) => role.wants.includes(t)).length;
   const signature = sameSignatureRole(character, roleId);
   let base;
-  if (matches >= 2) base = { mult: 1.18, label: "Perfect fit", tone: "great", matches };
-  else if (matches === 1) base = { mult: 1.08, label: "Good fit", tone: "good", matches };
-  else base = { mult: 0.85, label: "Misfit", tone: "bad", matches };
+  if (matches >= 2) base = { bonus: 15, label: "Perfect fit", tone: "great", matches };
+  else if (matches === 1) base = { bonus: 5, label: "Good fit", tone: "good", matches };
+  else base = { bonus: 0, label: "Misfit", tone: "bad", matches };
   if (signature) {
-    // Signature placement is never punished by a tag-mismatch penalty.
-    // It still gets the +8% signature bonus on top of the neutral floor.
-    const sigBase = Math.max(1, base.mult);
-    return { ...base, mult: sigBase + 0.08, label: matches >= 2 ? "Perfect fit · Signature" : matches === 1 ? "Good fit · Signature" : "Signature role", tone: matches >= 2 ? "great" : "good", signature: true };
+    // Signature placement always adds its bonus on top — never punished for a tag mismatch.
+    return { ...base, bonus: base.bonus + 10, label: matches >= 2 ? "Perfect fit · Signature" : matches === 1 ? "Good fit · Signature" : "Signature role", tone: matches >= 2 ? "great" : "good", signature: true };
   }
   return { ...base, signature: false };
 }
 function fittedRating(character, roleId) {
-  return Math.round(character.rating * roleFit(character, roleId).mult);
+  return Math.round(character.rating + roleFit(character, roleId).bonus);
 }
 function displayedRating(member, ctx = {}) {
   return fittedRatingWithAbility(member, ctx);
@@ -330,9 +328,9 @@ function fittedRatingWithAbility(member, ctx) {
   const { character, roleId } = member;
   let fit = roleFit(character, roleId);
   const ab = character.ability;
-  // adaptable: floor the misfit penalty to neutral
-  if (ab && ab.type === "adaptable" && fit.mult < 1) fit = { ...fit, mult: 1, label: "Adaptable", tone: "good" };
-  let r = character.rating * fit.mult;
+  // adaptable: guarantees at least a "Good fit" bonus, even on a tag misfit.
+  if (ab && ab.type === "adaptable" && fit.bonus < 5) fit = { ...fit, bonus: fit.signature ? fit.bonus + 5 : 5, label: fit.signature ? "Signature · Adaptable" : "Adaptable", tone: "good" };
+  let r = character.rating + fit.bonus;
   if (!ab) return Math.round(r);
   const ax = ab.x || 0; // guard: a missing bonus value must never poison the total
   // role_synergy
@@ -387,7 +385,7 @@ function squadScore(myTeam, oppChars, boost = 1, ctx = {}) {
       if (ab.type === "role_synergy" && ab.role === m.roleId) abilityNotes.push(`${ab.name}`);
       if (ab.type === "clutch" && Number.isFinite(rungNumber) && rungNumber >= 6 && rungNumber <= 10) abilityNotes.push(`${ab.name}`);
       if (ab.type === "overwhelm" && isHighest) abilityNotes.push(`${ab.name}`);
-      if (ab.type === "adaptable" && roleFit(m.character, m.roleId).mult < 1) abilityNotes.push(`${ab.name}`);
+      if (ab.type === "adaptable" && roleFit(m.character, m.roleId).bonus < 5) abilityNotes.push(`${ab.name}`);
     }
   });
   base = base * boost;
@@ -415,7 +413,7 @@ function autoAssign(chars) {
   return chars.map((c, i) => {
     let best = roleIds[i % roleIds.length], bestFit = -1;
     for (const rid of roleIds) {
-      const f = roleFit(c, rid).mult;
+      const f = roleFit(c, rid).bonus;
       if (f > bestFit) { bestFit = f; best = rid; }
     }
     return { character: c, roleId: best };
@@ -753,15 +751,15 @@ function GuideRoles() {
     <div>
       <GuideSection title="How role fit works">
         <p className="c" style={{ fontSize:13, color:"#d6d3d1", lineHeight:1.6, marginBottom:10 }}>
-          Every role "wants" a few tags. When you place a fighter into a role, the game checks how many of their tags match:
+          Every role "wants" a few tags. When you place a fighter into a role, the game checks how many of their tags match — and adds flat points straight onto their rating:
         </p>
         <div style={{ display:"flex", flexDirection:"column", gap:6, marginBottom:12 }}>
-          <FitRow tone="great" label="2+ matching tags" val="Perfect fit" mult="+18%" />
-          <FitRow tone="good" label="1 matching tag" val="Good fit" mult="+8%" />
-          <FitRow tone="bad" label="0 matching tags" val="Misfit" mult="−15%" />
+          <FitRow tone="great" label="2+ matching tags" val="Perfect fit" pts="+15" />
+          <FitRow tone="good" label="1 matching tag" val="Good fit" pts="+5" />
+          <FitRow tone="bad" label="0 matching tags" val="Misfit" pts="+0" />
         </div>
         <p className="c" style={{ fontSize:12, color:"#78716c", lineHeight:1.5 }}>
-          These percentages multiply the fighter's base rating up or down — so the same character can score very differently depending on which role you put them in.
+          It's simple addition — a fighter's final score is always their base rating plus every bonus listed next to them. A misfit never loses points, it just doesn't gain any from role fit.
         </p>
       </GuideSection>
       <GuideSection title="What each role wants">
@@ -778,12 +776,12 @@ function GuideRoles() {
     </div>
   );
 }
-function FitRow({ tone, label, val, mult }) {
+function FitRow({ tone, label, val, pts }) {
   const color = tone==="great" ? "#4ade80" : tone==="good" ? "#93c5fd" : "#f87171";
   return (
     <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"8px 12px", borderRadius:8, background:"rgba(255,255,255,0.03)", border:`1px solid ${color}33` }}>
       <span className="c" style={{ fontSize:13, color:"#a8a29e" }}>{label}</span>
-      <span className="c" style={{ fontSize:13, fontWeight:700, color }}>{val} · {mult}</span>
+      <span className="c" style={{ fontSize:13, fontWeight:700, color }}>{val} · {pts} pts</span>
     </div>
   );
 }
@@ -793,13 +791,13 @@ function GuideSignature() {
     <div>
       <GuideSection title="Signature role bonus">
         <p className="c" style={{ fontSize:13, color:"#d6d3d1", lineHeight:1.6, marginBottom:10 }}>
-          Every fighter has one canonical role — the one they're known for in their series. Placing them there grants an extra <b style={{color:"#4ade80"}}>+8%</b> on top of their tag-fit bonus.
+          Every fighter has one canonical role — the one they're known for in their series. Placing them there grants a flat <b style={{color:"#4ade80"}}>+10 points</b> on top of their tag-fit bonus.
         </p>
         <p className="c" style={{ fontSize:13, color:"#d6d3d1", lineHeight:1.6, marginBottom:10 }}>
-          This stacks with role fit — so a fighter in their signature role with 2+ matching tags gets <b>Perfect fit + Signature</b>, roughly a +26% swing over their base rating.
+          This stacks with role fit — so a fighter in their signature role with 2+ matching tags gets <b>Perfect fit + Signature</b>, a full +25 points over their base rating.
         </p>
         <p className="c" style={{ fontSize:13, color:"#d6d3d1", lineHeight:1.6 }}>
-          Even a misfit placement gets bumped up to neutral if it's their signature role — the game won't let lore-accurate placement be actively punished.
+          Even a misfit placement still earns the +10 if it's their signature role — the game never punishes lore-accurate placement.
         </p>
       </GuideSection>
       <GuideSection title="Where to see it">
@@ -1214,7 +1212,10 @@ function RoleSlot({ role, member, active, onClick, disabled }) {
             <span className="a" style={{ fontSize:22, color:fitColor }}>{fittedRating(member.character, role.id)}</span>
           </div>
           <div style={{ marginTop:2, marginBottom:4 }}>
-            <div className="c" style={{ fontSize:11, fontWeight:700, color:fitColor, textTransform:"uppercase", letterSpacing:"0.05em", marginBottom:4 }}>{fit.label}</div>
+            <div className="c" style={{ fontSize:11, fontWeight:700, color:fitColor, textTransform:"uppercase", letterSpacing:"0.05em", marginBottom:2 }}>{fit.label}</div>
+            <div className="c" style={{ fontSize:11, color:"#78716c", marginBottom:4 }}>
+              {member.character.rating} base{fit.bonus>0 && ` + ${fit.bonus} fit`} = {fittedRating(member.character, role.id)}
+            </div>
             <div style={{ display:"flex", gap:4, flexWrap:"wrap" }}>{member.character.tags.map((t)=><Tag key={t} t={t} small />)}</div>
           </div>
           <AbilityChip ability={member.character.ability} small />
