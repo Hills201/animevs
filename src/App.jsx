@@ -1454,20 +1454,6 @@ function ClimbResult({ team, onReplay, replayLabel }) {
                   {r.them.edges.length>0 && <div style={{ fontSize:10, color:"#fda4af", lineHeight:1.3 }}>+{r.them.bonus} {r.them.edges.join(", ")}</div>}
                 </div>
               </div>
-              <div style={{ marginTop:10, display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
-                <div style={{ borderRadius:8, padding:9, background:"rgba(255,255,255,0.025)", border:"1px solid rgba(255,255,255,0.06)" }}>
-                  {team.map((m) => {
-                    const shown = displayedRating(m, { rungNumber:r.rung, isHighest:m.character.rating === Math.max(...team.map((x)=>x.character.rating)) });
-                    const base = fittedRating(m.character, m.roleId);
-                    const delta = shown - base;
-                    return <div key={m.roleId} className="c" style={{ fontSize:10, color:delta>0?"#d8b4fe":"#78716c", display:"flex", justifyContent:"space-between", gap:8 }}>
-                      <span>{m.character.name}</span><b>{shown}{delta>0?` (+${delta})`:""}</b>
-                    </div>;
-                  })}
-                </div>
-                <div className="c" style={{ fontSize:10, color:"#78716c", padding:9, lineHeight:1.35 }}>
-                </div>
-              </div>
               </>
             )}
           </div>
