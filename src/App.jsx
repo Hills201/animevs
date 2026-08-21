@@ -2008,12 +2008,75 @@ function PvpMode() {
   const [linkCopied, setLinkCopied] = useState(false);
   const [pasteResult, setPasteResult] = useState("");
   const [fromLink, setFromLink] = useState(false); // did opponent arrive via a challenge link?
+  const [roomCode, setRoomCode] = useState(""); // live Supabase room code
+  const [roomRole, setRoomRole] = useState(null); // "a" | "b"
+  const [roomState, setRoomState] = useState(null); // current public room row
+  const [roomError, setRoomError] = useState("");
 
   const [seed] = useState(() => (Math.random()*1e9)|0);
   const [current, setCurrent] = useState(null);
   const [spinCount, setSpinCount] = useState(0);
   const [rerollsUsed, setRerollsUsed] = useState(0);
   const { spinning, reelFace, run } = useReel(seed);
+
+  // Live room subscription. Team codes are kept in Supabase but are only
+  // decoded into the UI after BOTH ready flags are true.
+  React.useEffect(() => {
+    if (!roomCode || !supabaseConfigured) return undefined;
+    const channel = supabase
+      .channel(`pvp-room:${roomCode}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "rooms", filter: `code=eq.${roomCode}` },
+        (payload) => {
+          if (!payload.new) return;
+          setRoomState(payload.new);
+        })
+      .subscribe();
+
+    supabase.from("rooms").select("*").eq("code", roomCode).single().then(({ data }) => {
+      if (data) setRoomState(data);
+    });
+
+    return () => { supabase.removeChannel(channel); };
+  }, [roomCode]);
+
+  // When both sides have locked, reveal exactly once and hand the teams to the
+  // existing resolvePvP/results UI.
+  React.useEffect(() => {
+    if (!roomCode || !roomRole || !roomState) return;
+    const bothLocked = !!roomState.player_a_ready && !!roomState.player_b_ready;
+    if (!bothLocked) return;
+    const otherCode = roomRole === "a" ? roomState.player_b_team : roomState.player_a_team;
+    if (!otherCode) return;
+    const decoded = decodeTeam(otherCode);
+    if (decoded.error) { setRoomError(decoded.error); return; }
+    setOppTeam(decoded.team);
+    setOppCode(otherCode);
+    setStage("reveal");
+  }, [roomCode, roomRole, roomState]);
+
+  async function createLiveRoom() {
+    if (!supabaseConfigured) { setRoomError("Supabase is not configured in this deployment."); return; }
+    setRoomError("");
+    const code = genRoomCode();
+    const { error } = await supabase.from("rooms").insert({ code, player_a_ready:false, player_b_ready:false, player_a_team:null, player_b_team:null });
+    if (error) { setRoomError(error.message); return; }
+    setRoomCode(code);
+    setRoomRole("a");
+    setStage("build");
+  }
+
+  async function joinLiveRoom(rawCode) {
+    if (!supabaseConfigured) { setRoomError("Supabase is not configured in this deployment."); return; }
+    const code = rawCode.trim().toUpperCase();
+    if (!code) return;
+    setRoomError("");
+    const { data, error } = await supabase.from("rooms").select("*").eq("code", code).single();
+    if (error || !data) { setRoomError("Room not found — check the code."); return; }
+    if (data.player_b_team) { setRoomError("That room already has two players."); return; }
+    setRoomCode(code);
+    setRoomRole("b");
+    setStage("build");
+  }
 
   // On mount: if the URL carries a challenge (?vs=CODE), auto-load the opponent
   // and drop the player straight into building their team.
@@ -2069,10 +2132,22 @@ function PvpMode() {
   }
   function placeInto(roleId){ if(!current) return; setMyTeam((t)=>({ ...t, [roleId]:{ character:current, roleId } })); setCurrent(null); }
 
-  function lockIn() {
+  async function lockIn() {
     const teamArr = ROLES.map((r) => myTeam[r.id]);
     const code = encodeTeam(teamArr);
-    setMyCode(code || "");
+    if (!code) return;
+    setMyCode(code);
+
+    if (roomCode && roomRole) {
+      const fields = roomRole === "a"
+        ? { player_a_team: code, player_a_ready: true }
+        : { player_b_team: code, player_b_ready: true };
+      const { error } = await supabase.from("rooms").update(fields).eq("code", roomCode);
+      if (error) { setRoomError(error.message); return; }
+      // Do not reveal here. The realtime effect waits for BOTH ready flags.
+      return;
+    }
+
     setStage("reveal");
   }
 
@@ -2089,6 +2164,7 @@ function PvpMode() {
   function reset() {
     setStage("menu"); setOppCode(""); setOppTeam(null); setOppError(""); setFromLink(false);
     setMyTeam({}); setMyCode(""); setCurrent(null); setSpinCount(0); setRerollsUsed(0); setPasteResult("");
+    setRoomCode(""); setRoomRole(null); setRoomState(null); setRoomError("");
     try { window.history.replaceState({}, "", window.location.pathname); } catch (e) {}
   }
 
@@ -2104,6 +2180,24 @@ function PvpMode() {
           Two teams, no luck of the ladder — highest total wins. Build hidden, then reveal.
         </p>
         {helpOpen && <HowToPlayModal modeId="pvp" onClose={() => { setHelpOpen(false); markSeenHelp(); }} />}
+
+        {supabaseConfigured && (
+          <div style={{ marginBottom:16, padding:18, borderRadius:14, border:"1px solid rgba(34,197,94,0.28)", background:"linear-gradient(160deg,rgba(34,197,94,0.08),rgba(255,255,255,0.02) 70%)" }}>
+            <div className="a" style={{ fontSize:20, color:"#f5f5f4", marginBottom:4 }}>LIVE ROOM</div>
+            <div className="c" style={{ fontSize:13, color:"#a8a29e", marginBottom:12 }}>Build privately on two devices. Neither side sees the other team until both lock in.</div>
+            <div style={{ display:"flex", flexDirection:"column", gap:9 }}>
+              <button onClick={createLiveRoom} className="a" style={{ padding:13, borderRadius:10, background:"#22c55e", color:"#07130a", border:"none", cursor:"pointer", fontSize:16 }}>CREATE ROOM</button>
+              <div style={{ display:"flex", gap:8 }}>
+                <input id="pvp-room-join" placeholder="ROOM CODE" className="c"
+                  style={{ flex:1, padding:"11px 12px", borderRadius:9, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.14)", color:"#f5f5f4", fontSize:15, textTransform:"uppercase", outline:"none", letterSpacing:"0.12em" }}
+                  onKeyDown={(e)=>{ if(e.key === "Enter") joinLiveRoom(e.currentTarget.value); }} />
+                <button onClick={()=>joinLiveRoom(document.getElementById("pvp-room-join")?.value || "")} className="c" style={{ padding:"11px 16px", borderRadius:9, background:"rgba(255,255,255,0.08)", border:"1px solid rgba(255,255,255,0.14)", color:"#e7e5e4", cursor:"pointer", fontWeight:700 }}>JOIN</button>
+              </div>
+            </div>
+            {roomError && <div className="c" style={{ marginTop:8, fontSize:12, color:"#f87171" }}>{roomError}</div>}
+          </div>
+        )}
+
         <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
           <button onClick={() => setStage("build")} className="hov"
             style={{ textAlign:"left", padding:22, borderRadius:14, cursor:"pointer", color:"#e7e5e4",
@@ -2184,11 +2278,33 @@ function PvpMode() {
             {rerollsUsed>=MAX_REROLLS ? "No rerolls left — place this fighter" : `↻ Discard & reroll · ${rerollsLeft} left`}
           </button>
         )}
-        {oppTeam && <div className="c" style={{ marginTop:12, fontSize:12, color:"#22c55e", textAlign:"center" }}>Opponent loaded — reveal when your team is full.</div>}
+        {roomCode ? (
+          <div className="c" style={{ marginTop:12, fontSize:12, color:"#a8a29e", textAlign:"center" }}>
+            Your team is only shared when you press LOCK IN. The match reveals automatically once both players lock.
+          </div>
+        ) : oppTeam && <div className="c" style={{ marginTop:12, fontSize:12, color:"#22c55e", textAlign:"center" }}>Opponent loaded — reveal when your team is full.</div>}
       </>
     );
     return (
       <div className="tIn">
+        {roomCode && (
+          <div style={{ marginBottom:12, padding:"12px 14px", borderRadius:10, border:"1px solid rgba(34,197,94,0.25)", background:"rgba(34,197,94,0.06)" }}>
+            <div style={{ display:"flex", justifyContent:"space-between", gap:10, alignItems:"center" }}>
+              <div>
+                <div className="c" style={{ fontSize:11, textTransform:"uppercase", letterSpacing:"0.14em", color:"#86efac", fontWeight:700 }}>LIVE ROOM · PLAYER {roomRole?.toUpperCase()}</div>
+                <div className="a" style={{ fontSize:22, color:"#f5f5f4", letterSpacing:"0.12em" }}>{roomCode}</div>
+              </div>
+              <div className="c" style={{ fontSize:12, color:"#a8a29e", textAlign:"right" }}>
+                {roomRole === "a" && !roomState?.player_b_team ? "Waiting for opponent to join" : "Your picks stay hidden"}
+              </div>
+            </div>
+            <div style={{ display:"flex", gap:6, marginTop:8, fontSize:11 }} className="c">
+              <span style={{ color:roomState?.player_a_ready?"#4ade80":"#78716c" }}>● A {roomState?.player_a_ready?"LOCKED":"BUILDING"}</span>
+              <span style={{ color:roomState?.player_b_ready?"#4ade80":"#78716c" }}>● B {roomState?.player_b_ready?"LOCKED":"BUILDING"}</span>
+            </div>
+            {roomError && <div className="c" style={{ marginTop:7, fontSize:12, color:"#f87171" }}>{roomError}</div>}
+          </div>
+        )}
         <SpinStage
           title="Versus — build hidden" subtitle="Your opponent can't see your picks."
           team={myTeam} activeChar={current} onPlace={placeInto}
@@ -2214,6 +2330,13 @@ function PvpMode() {
 
   return (
     <div className="tIn" style={{ maxWidth:680, margin:"0 auto" }}>
+      {roomCode ? (
+        <div style={{ borderRadius:14, padding:18, marginBottom:18, border:"1px solid rgba(34,197,94,0.35)", background:"rgba(34,197,94,0.07)" }}>
+          <div className="a" style={{ fontSize:24, color:"#f5f5f4" }}>MATCH REVEALED</div>
+          <div className="c" style={{ fontSize:13, color:"#a8a29e", marginTop:4 }}>Room {roomCode} · both teams were locked before either side was revealed.</div>
+        </div>
+      ) : (
+      <>
       {/* My code to share */}
       <div style={{ borderRadius:14, padding:20, marginBottom:18, border:"1px solid rgba(168,85,247,0.4)", background:"rgba(168,85,247,0.08)" }}>
         <div className="c" style={{ fontSize:12, textTransform:"uppercase", letterSpacing:"0.2em", color:"#c084fc", fontWeight:700, marginBottom:8 }}>Challenge link — send it to a friend</div>
@@ -2252,6 +2375,9 @@ function PvpMode() {
           </div>
           {oppError && <div className="c" style={{ fontSize:12, color:"#ef4444", marginTop:6 }}>{oppError}</div>}
         </div>
+      )}
+
+      </>
       )}
 
       {/* Result */}
