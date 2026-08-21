@@ -998,8 +998,9 @@ function Header({ mode, onHome, onFeedback, onGuide }) {
     <header style={{ marginBottom:28, display:"flex", alignItems:"center", justifyContent:"space-between", gap:8, flexWrap:"wrap" }}>
       <style>{`
         .hdrBtn .hdrLabel { display:none; }
+        .supportBtn .supportLabel { display:inline; }
+        .supportBtn { padding:7px 9px!important; font-size:11px!important; }
         @media(min-width:480px){ .hdrBtn .hdrLabel { display:inline; } .hdrBtn { padding:7px 12px!important; } }
-        .hdrBtn { padding:7px 8px!important; }
       `}</style>
       <div style={{ display:"flex", alignItems:"center", gap:12, cursor: mode?"pointer":"default" }} onClick={mode?onHome:undefined}>
         <h1 className="a" style={{ fontSize:40, lineHeight:1, margin:0, color:"#f5f5f4", letterSpacing:"-0.5px" }}>
@@ -1021,10 +1022,10 @@ function Header({ mode, onHome, onFeedback, onGuide }) {
         </button>
         {/* Small, quiet support link — swap the href for your real Ko-fi page */}
         <a href="https://ko-fi.com/animevs" target="_blank" rel="noopener noreferrer"
-          className="c hdrBtn" style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, textTransform:"uppercase", letterSpacing:"0.1em",
+          className="c hdrBtn supportBtn" style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, textTransform:"uppercase", letterSpacing:"0.1em",
             fontWeight:700, borderRadius:8, border:"1px solid rgba(255,45,53,0.3)",
             background:"rgba(255,45,53,0.08)", color:"#ff8a8f", textDecoration:"none", whiteSpace:"nowrap" }}>
-          ☕<span className="hdrLabel">Support the dev</span>
+          ☕<span className="supportLabel">Support the dev</span>
         </a>
         {mode && (
           <button onClick={onHome} className="c hdrBtn darkBtn"
