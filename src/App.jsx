@@ -1466,7 +1466,6 @@ function ClimbResult({ team, onReplay, replayLabel }) {
                   })}
                 </div>
                 <div className="c" style={{ fontSize:10, color:"#78716c", padding:9, lineHeight:1.35 }}>
-                  Fighter ratings include role fit and rung-specific abilities. Bonuses such as <b style={{color:"#d8b4fe"}}>+X on rungs 6–10</b> are shown here as the purple delta.
                 </div>
               </div>
               </>
