@@ -991,8 +991,19 @@ function Fonts() {
     @keyframes verdictPop{0%{opacity:0;transform:scale(.4)}70%{transform:scale(1.15)}100%{opacity:1;transform:scale(1)}}
     @keyframes sweep{0%{background-position:-200% 0}100%{background-position:200% 0}}
     .tIn{animation:tIn .3s ease both} .slam{animation:slam .45s cubic-bezier(.2,.8,.2,1) both}
+    @keyframes spinReelActive{0%,100%{transform:scale(1) rotate(0deg);filter:brightness(1)}50%{transform:scale(1.012) rotate(-.35deg);filter:brightness(1.14)}}
+    @keyframes spinLand{0%{transform:scale(.88);opacity:.25;filter:blur(4px)}55%{transform:scale(1.06);opacity:1;filter:blur(0)}100%{transform:scale(1)}}
+    @keyframes slotReveal{0%{opacity:0;transform:translateY(9px) scale(.94)}65%{opacity:1;transform:translateY(-2px) scale(1.015)}100%{transform:translateY(0) scale(1)}}
+    @keyframes rolePulse{0%,100%{box-shadow:0 0 0 3px rgba(255,255,255,.02)}50%{box-shadow:0 0 0 6px rgba(255,45,53,.10)}}
     .spinPop{animation:spinPop .4s cubic-bezier(.2,.9,.3,1) both}
+    .spinLand{animation:spinLand .38s cubic-bezier(.2,.85,.25,1) both}
+    .spinReelActive{animation:spinReelActive .34s ease-in-out infinite}
     .reel{animation:reelFlash .12s linear infinite}
+    .reelRolling{filter:blur(.4px)}
+    .slotReveal{animation:slotReveal .35s cubic-bezier(.2,.85,.25,1) both}
+    .draftOption{animation:slotReveal .32s cubic-bezier(.2,.85,.25,1) both}
+    .draftOption:nth-child(2){animation-delay:.04s}.draftOption:nth-child(3){animation-delay:.08s}.draftOption:nth-child(4){animation-delay:.12s}.draftOption:nth-child(5){animation-delay:.16s}
+    @media (prefers-reduced-motion: reduce){.spinReelActive,.reel,.spinLand,.slotReveal,.draftOption,.hov{animation:none!important;transition:none!important}}
     .clash{animation:clashPulse .7s ease-in-out infinite}
     .vsShake{animation:vsShake .5s ease-in-out infinite}
     .verdictPop{animation:verdictPop .5s cubic-bezier(.2,.8,.2,1) both}
@@ -1141,14 +1152,15 @@ function RoleSlot({ role, member, active, onClick, disabled }) {
       style={{ textAlign:"left", padding:12, borderRadius:12, width:"100%", cursor: disabled?"default":"pointer", color:"#e7e5e4",
         border: active ? `2px solid ${role.color}` : member ? "1px solid rgba(255,255,255,0.14)" : "1px dashed rgba(255,255,255,0.18)",
         background: active ? `${role.color}18` : member ? "rgba(255,255,255,0.04)" : "rgba(255,255,255,0.015)",
-        boxShadow: active ? `0 0 0 3px ${role.color}22` : "none" }}>
+        boxShadow: active ? `0 0 0 3px ${role.color}22` : "none",
+        animation: active ? "rolePulse 1.25s ease-in-out infinite" : "none" }}>
       <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom: member?8:0 }}>
         <span style={{ height:10, width:10, borderRadius:99, background:role.color }} />
         <span className="c" style={{ fontWeight:700, fontSize:15, color:"#f5f5f4" }}>{role.name}</span>
         <span className="c" style={{ fontSize:12, color:"#a8a29e" }}>· {role.blurb}</span>
       </div>
       {member ? (
-        <div>
+        <div key={member.character.id} className="slotReveal">
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
             <span style={{ display:"flex", alignItems:"center", gap:6 }}>
               <TierBadge tier={member.character.tier} small />
@@ -1526,25 +1538,74 @@ function SpinStage({
   );
 }
 
+// Lightweight WebAudio feedback — no external sound files or dependencies.
+let spinAudioCtx = null;
+function getSpinAudioContext() {
+  if (typeof window === "undefined") return null;
+  try {
+    spinAudioCtx ||= new (window.AudioContext || window.webkitAudioContext)();
+    if (spinAudioCtx.state === "suspended") spinAudioCtx.resume();
+    return spinAudioCtx;
+  } catch { return null; }
+}
+function playSpinTone(freq=520, duration=0.045, type="square", gain=0.018) {
+  const ctx = getSpinAudioContext();
+  if (!ctx) return;
+  try {
+    const osc = ctx.createOscillator();
+    const g = ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, ctx.currentTime);
+    g.gain.setValueAtTime(0.0001, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(gain, ctx.currentTime + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
+    osc.connect(g).connect(ctx.destination);
+    osc.start(); osc.stop(ctx.currentTime + duration + 0.01);
+  } catch {}
+}
+function playSpinStart() {
+  playSpinTone(240, 0.08, "sawtooth", 0.022);
+  setTimeout(() => playSpinTone(360, 0.07, "square", 0.018), 55);
+}
+function playSpinTick(progress=0) {
+  const freq = 420 + progress * 260;
+  playSpinTone(freq, 0.035, "square", 0.012);
+}
+function playSpinLand() {
+  playSpinTone(620, 0.07, "square", 0.026);
+  setTimeout(() => playSpinTone(820, 0.11, "sine", 0.021), 55);
+}
+function playPlaceTone() {
+  playSpinTone(700, 0.055, "triangle", 0.018);
+  setTimeout(() => playSpinTone(980, 0.09, "sine", 0.016), 45);
+}
+
 // tiny slot-machine reel animation hook shared by both modes
 function useReel(seedBase) {
   const [spinning, setSpinning] = useState(false);
   const [reelFace, setReelFace] = useState(null);
+  const [settleKey, setSettleKey] = useState(0);
   function run(pool, onSettle) {
     if (spinning || pool.length === 0) return;
+    getSpinAudioContext();
+    playSpinStart();
     setSpinning(true);
     let ticks = 0;
+    const totalTicks = 13;
     const iv = setInterval(() => {
       setReelFace(pool[(Math.random()*pool.length)|0]);
+      playSpinTick(ticks / totalTicks);
       ticks++;
-      if (ticks > 12) {
+      if (ticks >= totalTicks) {
         clearInterval(iv);
         setReelFace(null); setSpinning(false);
+        setSettleKey((k) => k + 1);
+        playSpinLand();
         onSettle();
       }
-    }, 60);
+    }, 68);
   }
-  return { spinning, reelFace, run };
+  return { spinning, reelFace, settleKey, run };
 }
 
 // ─── SPIN MODE ───────────────────────────────────────────────────────────────
@@ -1556,7 +1617,7 @@ function SpinMode() {
   const [rerollsUsed, setRerollsUsed] = useState(0);
   const [current, setCurrent] = useState(null);
   const [phase, setPhase] = useState("play");
-  const { spinning, reelFace, run } = useReel(seed);
+  const { spinning, reelFace, settleKey, run } = useReel(seed);
 
   const takenIds = Object.values(team).map((m) => m.character.id);
   const filledCount = Object.keys(team).length;
@@ -1588,6 +1649,7 @@ function SpinMode() {
   function placeInto(roleId) {
     if (!current) return;
     setTeam((t) => ({ ...t, [roleId]: { character: current, roleId } }));
+    playPlaceTone();
     setCurrent(null);
   }
   function reset() { setTeam({}); setCurrent(null); setSpinCount(0); setRerollsUsed(0); setPhase("play"); }
@@ -1595,9 +1657,9 @@ function SpinMode() {
   if (phase === "done") return <ClimbResult team={ROLES.map((r)=>team[r.id])} onReplay={reset} replayLabel="NEW SPIN" />;
 
   const reelArea = (
-    <div style={{ borderRadius:16, padding:20, border:"1px solid rgba(255,255,255,0.12)", background:"linear-gradient(160deg,rgba(255,45,53,0.10),rgba(255,255,255,0.02) 60%)", textAlign:"center", minHeight:210, display:"flex", flexDirection:"column", justifyContent:"center" }}>
+    <div className={`spinReel ${spinning ? "spinReelActive" : ""}`} style={{ borderRadius:16, padding:20, border:"1px solid rgba(255,255,255,0.12)", background:"linear-gradient(160deg,rgba(255,45,53,0.10),rgba(255,255,255,0.02) 60%)", textAlign:"center", minHeight:210, display:"flex", flexDirection:"column", justifyContent:"center" }}>
       {current ? (
-        <div className="spinPop">
+        <div key={settleKey} className="spinPop spinLand">
           <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
             <TierBadge tier={current.tier} />
             <div className="a" style={{ fontSize:40, lineHeight:1, color:"#f5f5f4" }}>{current.rating}</div>
@@ -1610,7 +1672,7 @@ function SpinMode() {
           <div className="c" style={{ marginTop:10, fontSize:13, color:RED, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.1em" }}>Pick a role → to place</div>
         </div>
       ) : reelFace ? (
-        <div className="reel">
+        <div className="reel reelRolling">
           <div className="a" style={{ fontSize:40, lineHeight:1, color:"#78716c" }}>{reelFace.rating}</div>
           <div className="c" style={{ fontWeight:700, fontSize:22, color:"#78716c", marginTop:4 }}>{reelFace.name}</div>
         </div>
@@ -1673,7 +1735,7 @@ function DraftMode() {
   const [rerollsUsed, setRerollsUsed] = useState(0);
   const [rerollNonce, setRerollNonce] = useState(0);
   const [phase, setPhase] = useState("play");
-  const { spinning, reelFace, run } = useReel(seed);
+  const { spinning, reelFace, settleKey, run } = useReel(seed);
 
   const placed = Object.values(team).map((m) => m.character);
   const spent = placed.reduce((s,c)=>s+c.cost,0) + (current ? current.cost : 0);
@@ -1732,6 +1794,7 @@ function DraftMode() {
   function placeInto(roleId) {
     if (!current) return;
     setTeam((t)=>({ ...t, [roleId]: { character: current, roleId } }));
+    playPlaceTone();
     setCurrent(null);
   }
   function reset() {
@@ -1749,9 +1812,9 @@ function DraftMode() {
   const maxAffordable = budgetLeftForPick - reserveNeeded;
 
   const reelArea = (
-    <div style={{ borderRadius:16, padding:16, border:"1px solid rgba(255,255,255,0.12)", background:"linear-gradient(160deg,rgba(59,130,246,0.10),rgba(255,255,255,0.02) 60%)", minHeight:210 }}>
+    <div className={`spinReel ${spinning ? "spinReelActive" : ""}`} style={{ borderRadius:16, padding:16, border:"1px solid rgba(255,255,255,0.12)", background:"linear-gradient(160deg,rgba(59,130,246,0.10),rgba(255,255,255,0.02) 60%)", minHeight:210 }}>
       {current ? (
-        <div className="spinPop" style={{ textAlign:"center", padding:"12px 0" }}>
+        <div key={settleKey} className="spinPop spinLand" style={{ textAlign:"center", padding:"12px 0" }}>
           <div className="a" style={{ fontSize:40, lineHeight:1, color:"#f5f5f4" }}>{current.rating}</div>
           <div className="c" style={{ fontWeight:700, fontSize:22, color:"#f5f5f4", marginTop:4 }}>{current.name}</div>
           <div className="c" style={{ fontSize:12, textTransform:"uppercase", letterSpacing:"0.08em", color:"#a8a29e", marginBottom:8 }}>{current.series} · {current.cost} cr</div>
@@ -1769,12 +1832,12 @@ function DraftMode() {
               Keeping {reserveNeeded} cr in reserve so you can fill your last {slotsAfterThis} role{slotsAfterThis===1?"":"s"}.
             </div>
           )}
-          <div style={{ display:"flex", flexDirection:"column", gap:7 }}>
+          <div className="draftOptions" style={{ display:"flex", flexDirection:"column", gap:7 }}>
             {options.map((c)=>{
               const tooPricey = c.cost > maxAffordable;
               const leftAfter = budgetLeftForPick - c.cost;
               return (
-                <button key={c.id} onClick={()=>choose(c)} disabled={tooPricey} className={tooPricey?"":"hov"}
+                <button key={c.id} onClick={()=>choose(c)} disabled={tooPricey} className={`${tooPricey?"":"hov"} draftOption`}
                   style={{ textAlign:"left", padding:"10px 12px", borderRadius:9, cursor:tooPricey?"not-allowed":"pointer", color:"#e7e5e4",
                     border:"1px solid rgba(255,255,255,0.12)", background: tooPricey?"rgba(255,255,255,0.02)":"rgba(255,255,255,0.05)", opacity:tooPricey?0.5:1 }}>
                   <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:10 }}>
@@ -1895,7 +1958,7 @@ function PvpMode() {
   const [current, setCurrent] = useState(null);
   const [spinCount, setSpinCount] = useState(0);
   const [rerollsUsed, setRerollsUsed] = useState(0);
-  const { spinning, reelFace, run } = useReel(seed);
+  const { spinning, reelFace, settleKey, run } = useReel(seed);
 
   // Live room subscription. Team codes are kept in Supabase but are only
   // decoded into the UI after BOTH ready flags are true.
@@ -2051,7 +2114,7 @@ function PvpMode() {
       setCurrent(chosen); setSpinCount((n)=>n+1);
     });
   }
-  function placeInto(roleId){ if(!current) return; setMyTeam((t)=>({ ...t, [roleId]:{ character:current, roleId } })); setCurrent(null); }
+  function placeInto(roleId){ if(!current) return; setMyTeam((t)=>({ ...t, [roleId]:{ character:current, roleId } })); playPlaceTone(); setCurrent(null); }
 
   async function lockIn() {
     const teamArr = ROLES.map((r) => myTeam[r.id]);
@@ -2132,9 +2195,9 @@ function PvpMode() {
   // ── BUILD: spin to fill 5 roles (opponent hidden) ──
   if (stage === "build") {
     const reelArea = (
-      <div style={{ borderRadius:16, padding:20, border:"1px solid rgba(255,255,255,0.12)", background:"linear-gradient(160deg,rgba(168,85,247,0.12),rgba(255,255,255,0.02) 60%)", textAlign:"center", minHeight:210, display:"flex", flexDirection:"column", justifyContent:"center" }}>
+      <div className={`spinReel ${spinning ? "spinReelActive" : ""}`} style={{ borderRadius:16, padding:20, border:"1px solid rgba(255,255,255,0.12)", background:"linear-gradient(160deg,rgba(168,85,247,0.12),rgba(255,255,255,0.02) 60%)", textAlign:"center", minHeight:210, display:"flex", flexDirection:"column", justifyContent:"center" }}>
         {current ? (
-          <div className="spinPop">
+          <div key={settleKey} className="spinPop spinLand">
             <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
               <TierBadge tier={current.tier} />
               <div className="a" style={{ fontSize:40, lineHeight:1, color:"#f5f5f4" }}>{current.rating}</div>
@@ -2146,7 +2209,7 @@ function PvpMode() {
             <div className="c" style={{ marginTop:10, fontSize:13, color:"#a855f7", fontWeight:700, textTransform:"uppercase", letterSpacing:"0.1em" }}>Pick a role → to place</div>
           </div>
         ) : reelFace ? (
-          <div className="reel">
+          <div className="reel reelRolling">
             <div className="a" style={{ fontSize:40, lineHeight:1, color:"#78716c" }}>{reelFace.rating}</div>
             <div className="c" style={{ fontWeight:700, fontSize:22, color:"#78716c", marginTop:4 }}>{reelFace.name}</div>
           </div>
