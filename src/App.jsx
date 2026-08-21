@@ -231,29 +231,87 @@ const MAX_REROLLS_DRAFT = 2;
 const MAX_REROLLS = 3; // legacy fallback (unused directly)
 
 // ─── COUNTERS (team-level) ──────────────────────────────────────────────────
+const COUNTER_TIERS = {
+  situational: { label:"Situational", one:8 },
+  core: { label:"Core", one:10 },
+  strong: { label:"Strong", one:12 },
+};
 const COUNTERS = [
-  { win:"range", lose:"melee", label:"Range > Melee" },
-  { win:"mobility", lose:"range", label:"Mobility > Range" },
-  { win:"melee", lose:"mobility", label:"Melee > Mobility" },
-  { win:"barrier", lose:"element", label:"Barrier > Element" },
-  { win:"giant", lose:"melee", label:"Giant > Melee" },
-  { win:"aura", lose:"barrier", label:"Aura > Barrier" },
-  { win:"speed", lose:"giant", label:"Speed > Giant" },
-  { win:"energy", lose:"barrier", label:"Energy > Barrier" },
-  { win:"stealth", lose:"summon", label:"Stealth > Summon" },
-  { win:"psychic", lose:"speed", label:"Psychic > Speed" },
-  { win:"regen", lose:"element", label:"Regen > Element" },
-  { win:"transform", lose:"stealth", label:"Transform > Stealth" },
-  { win:"heal", lose:"regen", label:"Heal > Regen" },
+  { win:"range", lose:"melee", label:"Range > Melee", tier:"core" },
+  { win:"mobility", lose:"range", label:"Mobility > Range", tier:"strong" },
+  { win:"melee", lose:"mobility", label:"Melee > Mobility", tier:"core" },
+  { win:"barrier", lose:"element", label:"Barrier > Element", tier:"strong" },
+  { win:"giant", lose:"melee", label:"Giant > Melee", tier:"situational" },
+  { win:"aura", lose:"barrier", label:"Aura > Barrier", tier:"core" },
+  { win:"speed", lose:"giant", label:"Speed > Giant", tier:"strong" },
+  { win:"energy", lose:"barrier", label:"Energy > Barrier", tier:"core" },
+  { win:"stealth", lose:"summon", label:"Stealth > Summon", tier:"situational" },
+  { win:"psychic", lose:"speed", label:"Psychic > Speed", tier:"strong" },
+  { win:"regen", lose:"element", label:"Regen > Element", tier:"situational" },
+  { win:"transform", lose:"stealth", label:"Transform > Stealth", tier:"core" },
+  { win:"heal", lose:"regen", label:"Heal > Regen", tier:"situational" },
 ];
-const COUNTER_BONUS = 15;
-const tagCount = (team, tag) => team.reduce((n, c) => n + (c.tags.includes(tag) ? 1 : 0), 0);
+const COUNTER_BONUS = 15; // legacy cap/reference; actual edge rewards are tier + advantage scaled
+const tagCount = (team, tag) => team.reduce((n, c) => n + (Array.isArray(c?.tags) && c.tags.includes(tag) ? 1 : 0), 0);
+
+function counterReward(edge, advantage) {
+  const cfg = COUNTER_TIERS[edge.tier] || COUNTER_TIERS.core;
+  // One tag of advantage starts modestly; stacking the same advantage increases
+  // the reward, capped at +20 so a single matchup can never dominate a rung.
+  return Math.min(20, cfg.one + Math.max(0, advantage - 1) * 5);
+}
+
+function projectCounterTags(team) {
+  return team.flatMap((m) => {
+    const ab = m?.character?.ability;
+    return ab?.type === "tag_projection" && ab.tag ? [ab.tag] : [];
+  });
+}
+
+function counterEdgesFor(myTeam, oppChars) {
+  const clean = myTeam.filter(Boolean);
+  const chars = clean.map((m) => m.character);
+  const projected = projectCounterTags(clean);
+  const countWith = (tag) => tagCount(chars, tag) + projected.filter((t) => t === tag).length;
+  const edges = [];
+  for (const ctr of COUNTERS) {
+    const winCount = countWith(ctr.win);
+    const loseCount = tagCount(oppChars, ctr.lose);
+    const advantage = winCount - loseCount;
+    if (winCount > 0 && advantage > 0) {
+      edges.push({ ...ctr, advantage, bonus: counterReward(ctr, advantage) });
+    }
+  }
+  return edges.sort((a,b) => b.bonus - a.bonus || b.advantage - a.advantage);
+}
+
+function counterProfile(team) {
+  const clean = team.filter(Boolean);
+  const direct = [...new Set(clean.flatMap((m) => m.character.tags || []))];
+  const projected = [...new Set(projectCounterTags(clean))];
+  const coverage = COUNTERS.filter((c) => direct.includes(c.win) || projected.includes(c.win));
+  return { direct, projected, coverage };
+}
+
+function applyStrongestCounterImmunity(score) {
+  if (!score.hasImmunity || score.edgeDetails.length === 0) return score;
+  const blocked = score.edgeDetails[0];
+  const nextDetails = score.edgeDetails.slice(1);
+  return {
+    ...score,
+    total: score.total - blocked.bonus,
+    bonus: score.bonus - blocked.bonus,
+    edgeDetails: nextDetails,
+    edges: nextDetails.map((e) => e.label),
+    immunityUsed: blocked,
+  };
+}
 
 // ─── ABILITIES ──────────────────────────────────────────────────────────────
 // Effect types and how each reads. Effects hook into rating/counter/role math.
 const ABILITY_INFO = {
   role_synergy:   (a) => `+${a.x} rating as ${roleById(a.role)?.name || a.role}`,
-  counter_immune: ()  => `Blocks the first enemy counter`,
+  counter_immune: ()  => `Blocks the strongest enemy counter`,
   tag_projection: (a) => `Counts as ${a.tag} for counters`,
   rival_bonus:    (a) => `+${a.x} team vs ${a.universe}`,
   adaptable:      ()  => `Never takes the Misfit penalty`,
@@ -342,22 +400,13 @@ function squadScore(myTeam, oppChars, boost = 1, ctx = {}) {
     }
   });
 
-  // counters — tag_projection adds virtual tags; counter_immune blocks first enemy edge
-  const projected = clean.flatMap((m) => {
-    const ab = m.character.ability;
-    return (ab && ab.type === "tag_projection") ? [ab.tag] : [];
-  });
-  const countWith = (tag) => tagCount(chars, tag) + projected.filter((t) => t === tag).length;
-
-  const edges = [];
-  let bonus = 0;
-  for (const ctr of COUNTERS) {
-    if (countWith(ctr.win) > 0 && countWith(ctr.win) > tagCount(oppChars, ctr.lose)) {
-      bonus += COUNTER_BONUS; edges.push(ctr.label);
-    }
-  }
+  // counters — projected tags only exist for counter math; they do not become
+  // permanent character tags. Counter rewards scale with advantage and tier.
+  const edgeDetails = counterEdgesFor(clean, oppChars);
+  const bonus = edgeDetails.reduce((sum, edge) => sum + edge.bonus, 0);
+  const edges = edgeDetails.map((edge) => edge.label);
   const hasImmunity = clean.some((m) => m.character.ability && m.character.ability.type === "counter_immune");
-  return { total: base + bonus, base, bonus, edges, abilityNotes: [...new Set(abilityNotes)], hasImmunity };
+  return { total: base + bonus, base, bonus, edges, edgeDetails, abilityNotes: [...new Set(abilityNotes)], hasImmunity };
 }
 
 // Opponent squads are auto-assigned to roles by best fit (so they get fair role bonuses too)
@@ -380,15 +429,10 @@ function resolveRung(myTeam, rung) {
   const themCtx = { rungNumber: rung.rung, universe: null };
   let me = squadScore(myTeam, oppChars, 1, meCtx);
   let them = squadScore(oppTeam, myTeam.map((m) => m.character), rung.boost, themCtx);
-  // counter_immune: if you have it, cancel the enemy's single largest counter edge
-  if (me.hasImmunity && them.edges.length > 0) {
-    them = { ...them, total: them.total - COUNTER_BONUS, bonus: them.bonus - COUNTER_BONUS,
-             edges: them.edges.slice(1), immunityUsed: true };
-  }
-  // and vice versa (enemy immunity vs your counters)
-  if (them.hasImmunity && me.edges.length > 0) {
-    me = { ...me, total: me.total - COUNTER_BONUS, bonus: me.bonus - COUNTER_BONUS, edges: me.edges.slice(1) };
-  }
+  // counter_immune cancels the strongest active enemy counter, not simply the
+  // first relationship in the hard-coded counter list.
+  if (me.hasImmunity) them = applyStrongestCounterImmunity(them);
+  if (them.hasImmunity) me = applyStrongestCounterImmunity(me);
   return { me, them, cleared: me.total >= them.total };
 }
 
@@ -398,9 +442,9 @@ function resolvePvP(teamA, teamB) {
   const charsB = teamB.map((m) => m.character);
   let a = squadScore(teamA, charsB, 1, { rungNumber: 5, universe: null });
   let b = squadScore(teamB, charsA, 1, { rungNumber: 5, universe: null });
-  // mutual counter immunity
-  if (a.hasImmunity && b.edges.length > 0) b = { ...b, total: b.total - COUNTER_BONUS, bonus: b.bonus - COUNTER_BONUS, edges: b.edges.slice(1) };
-  if (b.hasImmunity && a.edges.length > 0) a = { ...a, total: a.total - COUNTER_BONUS, bonus: a.bonus - COUNTER_BONUS, edges: a.edges.slice(1) };
+  // mutual counter immunity: each side cancels the opponent's strongest edge.
+  if (a.hasImmunity) b = applyStrongestCounterImmunity(b);
+  if (b.hasImmunity) a = applyStrongestCounterImmunity(a);
   const winner = a.total === b.total ? "tie" : a.total > b.total ? "a" : "b";
   return { a, b, winner };
 }
@@ -772,7 +816,7 @@ function GuideCounters() {
     <div>
       <GuideSection title="The counter web">
         <p className="c" style={{ fontSize:13, color:"#d6d3d1", lineHeight:1.6, marginBottom:10 }}>
-          Beyond role fit, your whole <b>team</b> can earn bonus points by out-countering the opponent's tags. If your team fields more of a "winning" tag than the opponent fields of the tag it beats, you earn <b style={{color:"#4ade80"}}>+{"15"} points</b> per edge.
+          Beyond role fit, your whole <b>team</b> can earn bonus points by out-countering the opponent's tags. Each edge starts at a tiered reward, then scales with your tag advantage: the first point of advantage is modest, a second adds <b>+5</b>, and a third or more caps the edge at <b>+20</b>.
         </p>
         <p className="c" style={{ fontSize:13, color:"#a8a29e", lineHeight:1.6, marginBottom:14 }}>
           This is why a lower-rated team can beat a higher-rated one — the right tag mix against a specific opponent matters as much as raw power.
@@ -783,6 +827,7 @@ function GuideCounters() {
           {COUNTERS.map((c) => (
             <div key={c.win+c.lose} style={{ display:"flex", alignItems:"center", gap:8, padding:"7px 10px", borderRadius:8, background:"rgba(255,255,255,0.03)" }}>
               <Tag t={c.win} small /><span className="c" style={{ color:"#4ade80", fontWeight:700, fontSize:13 }}>beats</span><Tag t={c.lose} small />
+              <span className="c" style={{ marginLeft:"auto", fontSize:10, color: c.tier==="strong"?"#fbbf24":c.tier==="core"?"#93c5fd":"#a8a29e", textTransform:"uppercase", letterSpacing:"0.08em" }}>{COUNTER_TIERS[c.tier]?.label || "Core"}</span>
             </div>
           ))}
         </div>
@@ -803,7 +848,7 @@ function GuideTiers() {
     <div>
       <GuideSection title="Tier tag caps">
         <p className="c" style={{ fontSize:13, color:"#d6d3d1", lineHeight:1.6, marginBottom:14 }}>
-          A fighter's tier limits how many combat tags they can carry — higher tiers are more versatile and can trigger more counter edges at once.
+          A fighter's tier limits how many combat tags they can carry — higher tiers are more versatile and can trigger more counter edges at once. Counter relationships are also tiered: some are situational, some core, and some strong, which changes their starting reward.
         </p>
         <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
           {tiers.map((x) => (
@@ -816,7 +861,7 @@ function GuideTiers() {
       </GuideSection>
       <GuideSection title="Why it matters">
         <p className="c" style={{ fontSize:13, color:"#a8a29e", lineHeight:1.6 }}>
-          An SS-tier fighter carrying 9 tags can plug into far more counter matchups than a C-tier fighter capped at 4 — part of what makes top-tier fighters worth their higher draft cost.
+          An SS-tier fighter carrying 9 tags can plug into far more counter matchups than a C-tier fighter capped at 4 — part of what makes top-tier fighters worth their higher draft cost. Counter Immunity now blocks the strongest active counter rather than whichever relationship happens to appear first.
         </p>
       </GuideSection>
     </div>
@@ -1475,6 +1520,27 @@ function ClimbResult({ team, onReplay, replayLabel }) {
   );
 }
 
+function CounterProfile({ team }) {
+  const members = Object.values(team || {}).filter(Boolean);
+  if (!members.length) return null;
+  const profile = counterProfile(members);
+  const visible = profile.coverage.slice(0, 6);
+  return (
+    <div style={{ marginTop:12, padding:12, borderRadius:10, border:"1px solid rgba(110,231,183,0.15)", background:"rgba(110,231,183,0.04)" }}>
+      <div className="c" style={{ fontSize:11, textTransform:"uppercase", letterSpacing:"0.15em", color:"#6ee7b7", fontWeight:700, marginBottom:7 }}>Counter profile</div>
+      <div style={{ display:"flex", gap:5, flexWrap:"wrap", marginBottom:6 }}>
+        {profile.direct.slice(0, 10).map((t) => <Tag key={t} t={t} small />)}
+        {profile.projected.map((t) => <span key={`p-${t}`} className="c" style={{ fontSize:10, padding:"3px 6px", borderRadius:6, border:"1px dashed #a78bfa", color:"#c4b5fd", background:"rgba(167,139,250,0.08)" }}>{t} projected</span>)}
+      </div>
+      {visible.length > 0 ? (
+        <div className="c" style={{ fontSize:11, color:"#a8a29e", lineHeight:1.35 }}>Coverage: {visible.map((c) => c.label).join(" · ")}</div>
+      ) : (
+        <div className="c" style={{ fontSize:11, color:"#78716c" }}>Add fighters with more combat tags to widen your counter coverage.</div>
+      )}
+    </div>
+  );
+}
+
 // ─── SHARED SPIN STAGE ───────────────────────────────────────────────────────
 // Reusable spinner + role-field. Both modes render this; they differ only in
 // what `renderReel` shows (1 char vs 5 options) and how a character is chosen.
@@ -1517,6 +1583,7 @@ function SpinStage({
               );
             })}
           </div>
+          <CounterProfile team={team} />
 
           {allFilled ? (
             <button onClick={onClimb} disabled={lockedIn} className="a redBtn"
@@ -2400,7 +2467,7 @@ function TeamColumn({ label, team, score, side, win }) {
         })}
       </div>
       {score.edges.length > 0 && (
-        <div className="c" style={{ fontSize:10, color:"#6ee7b7", marginTop:8, lineHeight:1.3 }}>+{score.bonus} {score.edges.join(", ")}</div>
+        <div className="c" style={{ fontSize:10, color:"#6ee7b7", marginTop:8, lineHeight:1.3 }}>+{score.bonus} {score.edgeDetails.map((e) => `${e.label} (+${e.bonus})`).join(", ")}</div>
       )}
     </div>
   );

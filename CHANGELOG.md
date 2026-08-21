@@ -1,6 +1,9 @@
-# Rung-gated ability fix
+# Changelog
 
-- Clutch abilities now activate only on numeric rungs 6 through 10.
-- R1-R5 never receive clutch rating bonuses.
-- Recap ability notes use the same gate.
-- This fixes cases such as Luffy receiving +8 at R5.
+## Counter system pass
+- Counter rewards now scale with tag advantage and counter tier, capped at +20 per edge.
+- Counter relationships are categorized as situational, core, or strong.
+- Counter Immunity now removes the strongest active enemy counter rather than the first hard-coded edge.
+- Projected tags remain virtual for counter math only and are surfaced as projected in the team Counter Profile.
+- Added an in-build Counter Profile showing direct/projected tags and counter coverage.
+- Updated the Guide to explain the revised counter rules and show counter tiers.
