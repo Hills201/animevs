@@ -1566,7 +1566,6 @@ function SpinMode() {
   const [team, setTeam] = useState({});          // roleId -> {character, roleId}
   const [spinCount, setSpinCount] = useState(0);
   const [rerollsUsed, setRerollsUsed] = useState(0);
-  const [pvpLocked, setPvpLocked] = useState(false);
   const [current, setCurrent] = useState(null);
   const [phase, setPhase] = useState("play");
   const { spinning, reelFace, run } = useReel(seed);
@@ -1893,6 +1892,7 @@ function PvpMode() {
   const [oppError, setOppError] = useState("");
   const [myTeam, setMyTeam] = useState({});     // roleId -> {character, roleId}
   const [myCode, setMyCode] = useState("");
+  const [pvpLocked, setPvpLocked] = useState(false);
   const [copied, setCopied] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
   const [pasteResult, setPasteResult] = useState("");
