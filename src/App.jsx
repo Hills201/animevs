@@ -279,8 +279,11 @@ function fittedRatingWithAbility(member, ctx) {
   const ax = ab.x || 0; // guard: a missing bonus value must never poison the total
   // role_synergy
   if (ab.type === "role_synergy" && ab.role === roleId) r += ax;
-  // clutch: only on hard rungs
-  if (ab.type === "clutch" && ctx && ctx.rungNumber >= 6) r += ax;
+  // clutch: only on hard rungs (R6-R10). Normalize the rung so an unexpected
+  // string/object value can never accidentally activate the bonus early.
+  const rungNumber = Number(ctx?.rungNumber);
+  const isHardRung = Number.isFinite(rungNumber) && rungNumber >= 6 && rungNumber <= 10;
+  if (ab.type === "clutch" && isHardRung) r += ax;
   // overwhelm: if this is the team's highest base rating
   if (ab.type === "overwhelm" && ctx && ctx.isHighest) r += ax;
   return Math.round(r);
@@ -324,7 +327,7 @@ function squadScore(myTeam, oppChars, boost = 1, ctx = {}) {
     const ab = m.character.ability;
     if (ab) {
       if (ab.type === "role_synergy" && ab.role === m.roleId) abilityNotes.push(`${ab.name}`);
-      if (ab.type === "clutch" && rungNumber >= 6) abilityNotes.push(`${ab.name}`);
+      if (ab.type === "clutch" && Number.isFinite(rungNumber) && rungNumber >= 6 && rungNumber <= 10) abilityNotes.push(`${ab.name}`);
       if (ab.type === "overwhelm" && isHighest) abilityNotes.push(`${ab.name}`);
       if (ab.type === "adaptable" && roleFit(m.character, m.roleId).mult < 1) abilityNotes.push(`${ab.name}`);
     }
