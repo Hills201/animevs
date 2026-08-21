@@ -527,10 +527,10 @@ export default function App() {
       const params = new URLSearchParams(window.location.search);
       if (params.get("vs")) return "pvp";
       if (params.get("result")) return "result";
-      if (params.get("roomtest")) return "roomtest"; // TEMP: Supabase realtime proof-of-concept
+      if (params.get("room")) return "pvp";
     } catch (e) {}
     return null;
-  }); // null | "draft" | "spin" | "pvp" | "result" | "roomtest"
+  }); // null | "draft" | "spin" | "pvp" | "result"
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
   return (
@@ -545,7 +545,6 @@ export default function App() {
           {mode === "spin" && <SpinMode />}
           {mode === "pvp" && <PvpMode />}
           {mode === "result" && <SharedResultView setMode={setMode} />}
-          {mode === "roomtest" && <RoomTestView />}
         </div>
       </div>
       <AdBanner />
@@ -1268,7 +1267,7 @@ function BattleSequence({ team, run, onDone }) {
 // someone else's climb, with a clear call to action to build your own team.
 // ─── ROOM TEST (TEMPORARY) ───────────────────────────────────────────────────
 // Proof-of-concept for live PvP rooms via Supabase Realtime. Not linked from
-// the home screen — reachable at ?roomtest=1 while we build this out.
+// Shared room helpers for live PvP.
 // Once the real feature is built, this whole block gets removed.
 function genRoomCode() {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no ambiguous chars
@@ -1277,117 +1276,8 @@ function genRoomCode() {
   return s;
 }
 
-function RoomTestView() {
-  const [roomCode, setRoomCode] = useState("");
-  const [joinInput, setJoinInput] = useState("");
-  const [role, setRole] = useState(null); // "a" | "b" | null
-  const [roomState, setRoomState] = useState(null); // live row from Supabase
-  const [status, setStatus] = useState("idle"); // idle | creating | joining | connected | error
-  const [errorMsg, setErrorMsg] = useState("");
+const ROOM_MAX_AGE_MS = 2 * 60 * 60 * 1000;
 
-  if (!supabaseConfigured) {
-    return (
-      <div className="tIn" style={{ maxWidth: 480, margin: "60px auto", textAlign: "center" }}>
-        <div className="a" style={{ fontSize: 24, color: "#f5f5f4", marginBottom: 8 }}>ROOM TEST</div>
-        <p className="c" style={{ color: "#a8a29e" }}>
-          Supabase isn't configured — missing VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY.
-        </p>
-      </div>
-    );
-  }
-
-  async function createRoom() {
-    setStatus("creating");
-    setErrorMsg("");
-    const code = genRoomCode();
-    const { error } = await supabase.from("rooms").insert({ code });
-    if (error) { setStatus("error"); setErrorMsg(error.message); return; }
-    setRoomCode(code);
-    setRole("a");
-    subscribeToRoom(code);
-  }
-
-  async function joinRoom() {
-    const code = joinInput.trim().toUpperCase();
-    if (!code) return;
-    setStatus("joining");
-    setErrorMsg("");
-    const { data, error } = await supabase.from("rooms").select("*").eq("code", code).single();
-    if (error || !data) { setStatus("error"); setErrorMsg("Room not found — check the code."); return; }
-    setRoomCode(code);
-    setRole("b");
-    subscribeToRoom(code);
-  }
-
-  function subscribeToRoom(code) {
-    setStatus("connected");
-    supabase
-      .channel(`room:${code}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "rooms", filter: `code=eq.${code}` },
-        (payload) => setRoomState(payload.new))
-      .subscribe();
-  }
-
-  // Once we know our role, mark ourselves ready in the row (simple presence test)
-  React.useEffect(() => {
-    if (!roomCode || !role) return;
-    const field = role === "a" ? "player_a_ready" : "player_b_ready";
-    supabase.from("rooms").update({ [field]: true }).eq("code", roomCode).then(({ error }) => {
-      if (error) setErrorMsg(error.message);
-    });
-    // fetch initial state too, in case the row changed before our subscription attached
-    supabase.from("rooms").select("*").eq("code", roomCode).single().then(({ data }) => {
-      if (data) setRoomState(data);
-    });
-  }, [roomCode, role]);
-
-  const bothReady = roomState?.player_a_ready && roomState?.player_b_ready;
-
-  return (
-    <div className="tIn" style={{ maxWidth: 520, margin: "0 auto" }}>
-      <div className="a" style={{ fontSize: 28, color: "#f5f5f4", marginBottom: 4 }}>ROOM TEST</div>
-      <p className="c" style={{ color: "#a8a29e", fontSize: 13, marginBottom: 24 }}>
-        Proof of concept — proving live presence works before building real PvP rooms on top of it.
-      </p>
-
-      {!roomCode ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <button onClick={createRoom} disabled={status === "creating"} className="a redBtn"
-            style={{ padding: "16px", borderRadius: 12, background: RED, color: "#fff", border: "none", cursor: "pointer", fontSize: 18 }}>
-            {status === "creating" ? "Creating…" : "Create Room"}
-          </button>
-          <div className="c" style={{ textAlign: "center", color: "#57534e", fontSize: 12 }}>— or —</div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <input value={joinInput} onChange={(e) => setJoinInput(e.target.value)} placeholder="Enter room code"
-              className="c" style={{ flex: 1, padding: "12px 14px", borderRadius: 10, background: "rgba(255,255,255,0.05)",
-                border: "1px solid rgba(255,255,255,0.14)", color: "#f5f5f4", fontSize: 16, outline: "none", textTransform: "uppercase" }} />
-            <button onClick={joinRoom} disabled={status === "joining"} className="c"
-              style={{ padding: "12px 20px", borderRadius: 10, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.14)", color: "#e7e5e4", cursor: "pointer", fontWeight: 700 }}>
-              Join
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div style={{ borderRadius: 16, padding: 24, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.03)" }}>
-          <div className="c" style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: "0.15em", color: "#78716c", marginBottom: 6 }}>Room code</div>
-          <div className="a" style={{ fontSize: 36, color: "#f5f5f4", marginBottom: 16, letterSpacing: "0.1em" }}>{roomCode}</div>
-          <div className="c" style={{ fontSize: 13, color: "#a8a29e", marginBottom: 16 }}>You are Player {role === "a" ? "A (host)" : "B (joined)"}</div>
-          <div style={{ display: "flex", gap: 10 }}>
-            <PresenceDot label="Player A" ready={!!roomState?.player_a_ready} />
-            <PresenceDot label="Player B" ready={!!roomState?.player_b_ready} />
-          </div>
-          {bothReady && (
-            <div className="c" style={{ marginTop: 16, padding: 12, borderRadius: 10, background: "rgba(74,222,128,0.1)", border: "1px solid rgba(74,222,128,0.3)", color: "#4ade80", fontWeight: 700, textAlign: "center" }}>
-              ✓ Both players connected — realtime works!
-            </div>
-          )}
-        </div>
-      )}
-
-      {errorMsg && <div className="c" style={{ color: "#ef4444", fontSize: 13, marginTop: 12 }}>{errorMsg}</div>}
-    </div>
-  );
-}
 function PresenceDot({ label, ready }) {
   return (
     <div style={{ flex: 1, textAlign: "center", padding: 12, borderRadius: 10, background: ready ? "rgba(74,222,128,0.1)" : "rgba(255,255,255,0.03)", border: `1px solid ${ready ? "rgba(74,222,128,0.3)" : "rgba(255,255,255,0.1)"}` }}>
@@ -2012,6 +1902,7 @@ function PvpMode() {
   const [roomRole, setRoomRole] = useState(null); // "a" | "b"
   const [roomState, setRoomState] = useState(null); // current public room row
   const [roomError, setRoomError] = useState("");
+  const [opponentOnline, setOpponentOnline] = useState(null);
 
   const [seed] = useState(() => (Math.random()*1e9)|0);
   const [current, setCurrent] = useState(null);
@@ -2023,27 +1914,47 @@ function PvpMode() {
   // decoded into the UI after BOTH ready flags are true.
   React.useEffect(() => {
     if (!roomCode || !supabaseConfigured) return undefined;
+    let channel;
+    let cancelled = false;
+    setOpponentOnline(null);
     // Keep the local side stable across remounts/reloads so Player B never
     // falls back to Player A in the result screen.
     try {
       const savedRole = sessionStorage.getItem(`animevs:room-role:${roomCode}`);
-      if (savedRole === "a" || savedRole === "b") setRoomRole(savedRole);
+      if ((savedRole === "a" || savedRole === "b") && !roomRole) setRoomRole(savedRole);
     } catch (e) {}
-    const channel = supabase
-      .channel(`pvp-room:${roomCode}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "rooms", filter: `code=eq.${roomCode}` },
-        (payload) => {
-          if (!payload.new) return;
-          setRoomState(payload.new);
-        })
-      .subscribe();
 
-    supabase.from("rooms").select("*").eq("code", roomCode).single().then(({ data }) => {
-      if (data) setRoomState(data);
+    supabase.from("rooms").select("*").eq("code", roomCode).single().then(async ({ data, error }) => {
+      if (cancelled) return;
+      if (error || !data) { setRoomError("This room no longer exists."); return; }
+      const createdAt = data.created_at ? new Date(data.created_at).getTime() : 0;
+      if (createdAt && Date.now() - createdAt > ROOM_MAX_AGE_MS) {
+        setRoomError("This room has expired. Create a new room to play.");
+        return;
+      }
+      setRoomState(data);
+
+      channel = supabase.channel(`pvp-room:${roomCode}`, { config: { presence: { key: roomRole || "unknown" } } })
+        .on("postgres_changes", { event: "*", schema: "public", table: "rooms", filter: `code=eq.${roomCode}` },
+          (payload) => { if (payload.new) setRoomState(payload.new); })
+        .on("presence", { event: "sync" }, () => {
+          const state = channel.presenceState();
+          const keys = Object.keys(state);
+          setOpponentOnline(keys.some((key) => key !== roomRole));
+        })
+        .subscribe(async (status) => {
+          if (status === "SUBSCRIBED") {
+            await channel.track({ role: roomRole || "unknown", at: Date.now() });
+          }
+        });
     });
 
-    return () => { supabase.removeChannel(channel); };
-  }, [roomCode]);
+    return () => {
+      cancelled = true;
+      if (channel) supabase.removeChannel(channel);
+      setOpponentOnline(null);
+    };
+  }, [roomCode, roomRole]);
 
   // When both sides have locked, reveal exactly once and hand the teams to the
   // existing resolvePvP/results UI.
@@ -2092,6 +2003,8 @@ function PvpMode() {
     setRoomError("");
     const { data, error } = await supabase.from("rooms").select("*").eq("code", code).single();
     if (error || !data) { setRoomError("Room not found — check the code."); return; }
+    const createdAt = data.created_at ? new Date(data.created_at).getTime() : 0;
+    if (createdAt && Date.now() - createdAt > ROOM_MAX_AGE_MS) { setRoomError("That room has expired. Create a new room."); return; }
     if (data.player_b_team && data.player_b_team !== "__JOINED__") { setRoomError("That room already has two players."); return; }
     // Mark the second seat as occupied immediately. This produces a realtime
     // row update for the host even though Player B has not locked a team yet.
@@ -2108,6 +2021,11 @@ function PvpMode() {
   React.useEffect(() => {
     try {
       const params = new URLSearchParams(window.location.search);
+      const room = params.get("room");
+      if (room) {
+        joinLiveRoom(room);
+        return;
+      }
       const vs = params.get("vs");
       if (vs) {
         const res = decodeTeam(vs.trim());
@@ -2322,11 +2240,13 @@ function PvpMode() {
               </div>
               <div className="c" style={{ fontSize:12, color:"#a8a29e", textAlign:"right" }}>
                 {roomRole === "a" && !roomState?.player_b_team ? "Waiting for opponent to join" : roomRole === "b" && roomState?.player_b_team === "__JOINED__" ? "Joined — build your team" : "Your picks stay hidden"}
+                {roomState?.player_b_team && opponentOnline === false ? " · Opponent offline" : opponentOnline ? " · Opponent online" : ""}
               </div>
             </div>
             <div style={{ display:"flex", gap:6, marginTop:8, fontSize:11 }} className="c">
               <span style={{ color:roomState?.player_a_ready?"#4ade80":"#78716c" }}>● A {roomState?.player_a_ready?"LOCKED":"BUILDING"}</span>
               <span style={{ color:roomState?.player_b_ready?"#4ade80":"#78716c" }}>● B {roomState?.player_b_ready?"LOCKED":"BUILDING"}</span>
+              {roomState?.player_b_team && <span style={{ color:opponentOnline===false?"#f59e0b":"#60a5fa", marginLeft:4 }}>● {opponentOnline===false?"OFFLINE":"LIVE"}</span>}
             </div>
             {roomError && <div className="c" style={{ marginTop:7, fontSize:12, color:"#f87171" }}>{roomError}</div>}
           </div>
