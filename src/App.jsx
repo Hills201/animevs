@@ -2232,13 +2232,14 @@ function PvpMode() {
     return <div className="tIn" style={{ maxWidth:560, margin:"0 auto" }}><div className="a" style={{ fontSize:28, color:"#f5f5f4", marginBottom:8 }}>ROOM REQUIRED</div><div className="c" style={{ color:"#a8a29e" }}>Start or join a live room to play Versus.</div><button onClick={reset} className="c" style={{ marginTop:16, padding:"11px 16px", borderRadius:9, background:"rgba(255,255,255,0.08)", border:"1px solid rgba(255,255,255,0.14)", color:"#e7e5e4", cursor:"pointer" }}>BACK TO ROOMS</button></div>;
   }
   const myTeamArr = ROLES.map((r) => myTeam[r.id]);
+  // resolvePvP is intentionally called with the local team first on BOTH clients.
+  // Therefore result.a is always YOUR TEAM and result.b is always OPPONENT,
+  // regardless of whether this browser owns room seat A or B.
   const result = oppTeam ? resolvePvP(myTeamArr, oppTeam) : null;
-  const localSide = roomCode && roomRole === "b" ? "b" : "a";
-  const iWon = result && result.winner === localSide;
+  const iWon = result && result.winner === "a";
   const tie = result && result.winner === "tie";
-  const localTeamScore = result ? result[localSide] : null;
-  const opponentSide = localSide === "a" ? "b" : "a";
-  const opponentScore = result ? result[opponentSide] : null;
+  const localTeamScore = result ? result.a : null;
+  const opponentScore = result ? result.b : null;
 
   function copyMyCode(){ navigator.clipboard?.writeText(myCode).then(()=>{ setCopied(true); setTimeout(()=>setCopied(false),1800); }); }
   function copyMyLink(){ navigator.clipboard?.writeText(challengeLink(myCode)).then(()=>{ setLinkCopied(true); setTimeout(()=>setLinkCopied(false),1800); }); }
@@ -2307,8 +2308,8 @@ function PvpMode() {
             </div>
           </div>
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:0 }}>
-            <TeamColumn label="YOUR TEAM" team={myTeamArr} score={localTeamScore} side={localSide} win={iWon} />
-            <TeamColumn label="OPPONENT" team={oppTeam} score={opponentScore} side={opponentSide} win={result.winner===opponentSide} />
+            <TeamColumn label="YOUR TEAM" team={myTeamArr} score={localTeamScore} side="a" win={iWon} />
+            <TeamColumn label="OPPONENT" team={oppTeam} score={opponentScore} side="b" win={result.winner==="b"} />
           </div>
         </div>
       )}
