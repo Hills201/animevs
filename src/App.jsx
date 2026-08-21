@@ -1521,7 +1521,7 @@ function SpinStage({
           {allFilled ? (
             <button onClick={onClimb} className="a redBtn"
               style={{ marginTop:16, width:"100%", fontSize:20, letterSpacing:"0.03em", padding:"14px", borderRadius:10, background:RED, color:"#fff", border:"none", cursor:"pointer", boxShadow:"0 8px 30px -8px rgba(255,45,53,0.7)" }}>
-              ENTER THE LADDER →
+              LOCK IN TEAM →
             </button>
           ) : activeChar ? (
             <p className="c" style={{ marginTop:12, fontSize:13, color:"#a8a29e", textAlign:"center" }}>
