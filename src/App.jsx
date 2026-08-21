@@ -2023,6 +2023,12 @@ function PvpMode() {
   // decoded into the UI after BOTH ready flags are true.
   React.useEffect(() => {
     if (!roomCode || !supabaseConfigured) return undefined;
+    // Keep the local side stable across remounts/reloads so Player B never
+    // falls back to Player A in the result screen.
+    try {
+      const savedRole = sessionStorage.getItem(`animevs:room-role:${roomCode}`);
+      if (savedRole === "a" || savedRole === "b") setRoomRole(savedRole);
+    } catch (e) {}
     const channel = supabase
       .channel(`pvp-room:${roomCode}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "rooms", filter: `code=eq.${roomCode}` },
@@ -2048,7 +2054,7 @@ function PvpMode() {
 
     const myRoomCode = roomRole === "a" ? roomState.player_a_team : roomState.player_b_team;
     const otherRoomCode = roomRole === "a" ? roomState.player_b_team : roomState.player_a_team;
-    if (!myRoomCode || !otherRoomCode) return;
+    if (!myRoomCode || !otherRoomCode || myRoomCode === "__JOINED__" || otherRoomCode === "__JOINED__") return;
 
     const mine = decodeTeam(myRoomCode);
     const theirs = decodeTeam(otherRoomCode);
@@ -2075,6 +2081,7 @@ function PvpMode() {
     if (error) { setRoomError(error.message); return; }
     setRoomCode(code);
     setRoomRole("a");
+    try { sessionStorage.setItem(`animevs:room-role:${code}`, "a"); } catch (e) {}
     setStage("build");
   }
 
@@ -2085,9 +2092,14 @@ function PvpMode() {
     setRoomError("");
     const { data, error } = await supabase.from("rooms").select("*").eq("code", code).single();
     if (error || !data) { setRoomError("Room not found — check the code."); return; }
-    if (data.player_b_team) { setRoomError("That room already has two players."); return; }
+    if (data.player_b_team && data.player_b_team !== "__JOINED__") { setRoomError("That room already has two players."); return; }
+    // Mark the second seat as occupied immediately. This produces a realtime
+    // row update for the host even though Player B has not locked a team yet.
+    const { error: joinError } = await supabase.from("rooms").update({ player_b_team: "__JOINED__", player_b_ready: false }).eq("code", code).is("player_b_team", null);
+    if (joinError) { setRoomError(joinError.message); return; }
     setRoomCode(code);
     setRoomRole("b");
+    try { sessionStorage.setItem(`animevs:room-role:${code}`, "b"); } catch (e) {}
     setStage("build");
   }
 
@@ -2175,6 +2187,7 @@ function PvpMode() {
   }
 
   function reset() {
+    try { if (roomCode) sessionStorage.removeItem(`animevs:room-role:${roomCode}`); } catch (e) {}
     setStage("menu"); setOppCode(""); setOppTeam(null); setOppError(""); setFromLink(false);
     setMyTeam({}); setMyCode(""); setCurrent(null); setSpinCount(0); setRerollsUsed(0); setPasteResult("");
     setRoomCode(""); setRoomRole(null); setRoomState(null); setRoomError("");
@@ -2308,7 +2321,7 @@ function PvpMode() {
                 <div className="a" style={{ fontSize:22, color:"#f5f5f4", letterSpacing:"0.12em" }}>{roomCode}</div>
               </div>
               <div className="c" style={{ fontSize:12, color:"#a8a29e", textAlign:"right" }}>
-                {roomRole === "a" && !roomState?.player_b_team ? "Waiting for opponent to join" : "Your picks stay hidden"}
+                {roomRole === "a" && !roomState?.player_b_team ? "Waiting for opponent to join" : roomRole === "b" && roomState?.player_b_team === "__JOINED__" ? "Joined — build your team" : "Your picks stay hidden"}
               </div>
             </div>
             <div style={{ display:"flex", gap:6, marginTop:8, fontSize:11 }} className="c">
