@@ -312,7 +312,7 @@ const ABILITY_INFO = {
   counter_immune: ()  => `Blocks the strongest enemy counter`,
   tag_projection: (a) => `Counts as ${a.tag} for counters`,
   rival_bonus:    (a) => `+${a.x} team vs ${a.universe}`,
-  adaptable:      ()  => `Never takes the Misfit penalty`,
+  adaptable:      ()  => `Always earns at least a Good Fit bonus`,
   clutch:         (a) => `+${a.x} rating on rungs 6-10`,
   aura_buff:      (a) => `+${a.x} to neighboring roles`,
   overwhelm:      (a) => `+${a.x} if your highest-rated fighter`,
@@ -1542,6 +1542,49 @@ function CounterProfile({ team }) {
   );
 }
 
+// Shows the tag profile of the NEXT rung you'll face, and — once you have any
+// fighters placed — which of your tags actually counter it. Answers "what am
+// I about to fight" at decision time, instead of only after the battle.
+function opponentTagProfile(rung) {
+  const chars = (rung.team || []).map((id) => byId(id)).filter(Boolean);
+  const tagCounts = {};
+  chars.forEach((c) => c.tags.forEach((t) => { tagCounts[t] = (tagCounts[t] || 0) + 1; }));
+  return tagCounts;
+}
+function UpcomingRung({ team, rungNumber = 1 }) {
+  const rung = LADDER.find((r) => r.rung === rungNumber);
+  if (!rung) return null;
+  const oppTags = opponentTagProfile(rung);
+  const oppTagList = Object.keys(oppTags).sort((a, b) => oppTags[b] - oppTags[a]);
+  const members = Object.values(team || {}).filter(Boolean);
+  const myProfile = members.length ? counterProfile(members) : null;
+  const myTags = myProfile ? new Set([...myProfile.direct, ...myProfile.projected]) : new Set();
+
+  // which of the opponent's tags do I have a counter for?
+  const advantages = COUNTERS.filter((c) => oppTags[c.lose] && myTags.has(c.win));
+
+  return (
+    <div style={{ marginTop:12, padding:12, borderRadius:10, border:"1px solid rgba(255,255,255,0.12)", background:"rgba(255,255,255,0.02)" }}>
+      <div className="c" style={{ fontSize:11, textTransform:"uppercase", letterSpacing:"0.15em", color:"#a8a29e", fontWeight:700, marginBottom:2 }}>
+        Up next · R{rung.rung} {rung.title}
+      </div>
+      <div className="c" style={{ fontSize:11, color:"#78716c", marginBottom:8 }}>{rung.universe}</div>
+      <div style={{ display:"flex", gap:5, flexWrap:"wrap", marginBottom:8 }}>
+        {oppTagList.map((t) => <Tag key={t} t={t} small />)}
+      </div>
+      {members.length === 0 ? (
+        <div className="c" style={{ fontSize:11, color:"#78716c" }}>Place a fighter to see how your counters stack up.</div>
+      ) : advantages.length > 0 ? (
+        <div className="c" style={{ fontSize:11, color:"#6ee7b7", lineHeight:1.4 }}>
+          You counter: {advantages.map((a) => `${a.win} > ${a.lose}`).join(" · ")}
+        </div>
+      ) : (
+        <div className="c" style={{ fontSize:11, color:"#78716c" }}>No counters against this rung yet — add fighters whose tags beat theirs.</div>
+      )}
+    </div>
+  );
+}
+
 // ─── SHARED SPIN STAGE ───────────────────────────────────────────────────────
 // Reusable spinner + role-field. Both modes render this; they differ only in
 // what `renderReel` shows (1 char vs 5 options) and how a character is chosen.
@@ -1585,6 +1628,7 @@ function SpinStage({
             })}
           </div>
           <CounterProfile team={team} />
+          <UpcomingRung team={team} rungNumber={1} />
 
           {allFilled ? (
             <button onClick={onClimb} disabled={lockedIn} className="a redBtn"
