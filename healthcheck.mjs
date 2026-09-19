@@ -2,65 +2,64 @@
 /**
  * animeVS health check
  * ---------------------------------------------------------------
- * Run from the repo root:   node healthcheck.mjs
- * Or point it at a file:    node healthcheck.mjs path/to/v1.jsx
+ * From the repo root:   node healthcheck.mjs
+ * Or a specific file:   node healthcheck.mjs path/to/v1.jsx
  *
- * It slices the pure game-logic section out of App.jsx (everything between
- * the imports and the first UI constant), loads it as a module, and runs:
- *   1. data integrity  — dup ids, tier tag caps, bad signature roles,
- *                        unknown ability types, ladder references
- *   2. NaN sweep       — every character in every role against every rung
- *   3. ceiling         — can a strong legal team still clear 10/10?
- *   4. random average  — how far does an average legal team get?
- *   5. codec           — encode/decode roundtrips for team + result codes
- *   6. share-code drift— warns if the roster changed since a pinned snapshot
+ * Slices the pure game-logic section out of App.jsx and runs:
+ *   1. data integrity   — dup ids, tier tag caps, signature roles, ladder refs
+ *   2. codec table      — every character registered, append-only order intact,
+ *                         no duplicates, within the 256-slot index
+ *   3. synergy          — duo ids real, same-series, no duplicate pairs,
+ *                         ladder opponents earn zero synergy
+ *   4. NaN sweep        — every character in every role against every rung
+ *   5. ceiling          — hill-climbs a real team; the ladder must stay clearable
+ *   6. random average   — how far an average legal team gets (must stay hard)
+ *   7. codec roundtrip  — team + result codes survive encode/decode
  *
- * Exits non-zero if anything fails, so it can gate a deploy.
+ * Exits non-zero on failure, so it can gate a deploy.
  */
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import crypto from "node:crypto";
 import { pathToFileURL } from "node:url";
 
 const SRC = process.argv[2] || "src/App.jsx";
 if (!fs.existsSync(SRC)) {
-  console.error(`Can't find ${SRC}. Run from the repo root, or pass the path as an argument.`);
+  console.error(`Can't find ${SRC}. Run from the repo root, or pass a path.`);
   process.exit(1);
 }
 
-// ── slice the pure logic out of the component file ────────────────────────
 const raw = fs.readFileSync(SRC, "utf8");
-const startIdx = raw.indexOf("const CHARACTERS");
-const endIdx = raw.indexOf('const INK =');
-if (startIdx < 0 || endIdx < 0 || endIdx <= startIdx) {
-  console.error("Couldn't locate the logic section (expected `const CHARACTERS` ... `const INK =`).");
-  console.error("If you renamed those, update the markers at the top of this script.");
+const a = raw.indexOf("const CHARACTERS");
+const b = raw.indexOf("const INK =");
+if (a < 0 || b <= a) {
+  console.error("Couldn't locate the logic section (`const CHARACTERS` ... `const INK =`).");
   process.exit(1);
 }
-const logic = raw.slice(startIdx, endIdx) + `
-export { CHARACTERS, LADDER, ROLES, BUDGET, PICKS, TIER_TAG_CAP, byId, roleFit,
-  fittedRating, squadScore, autoAssign, resolveRung, resolvePvP, encodeTeam,
-  decodeTeam, encodeResult, decodeResult, counterEdgesFor, tagCapFor };
-`;
-const tmp = path.join(os.tmpdir(), `animevs-logic-${Date.now()}.mjs`);
-fs.writeFileSync(tmp, logic);
+const tmp = path.join(os.tmpdir(), `animevs-${Date.now()}.mjs`);
+fs.writeFileSync(tmp, raw.slice(a, b) + `
+export { CHARACTERS, LADDER, ROLES, BUDGET, PICKS, DUOS, DUO_BONUS, CODEC_IDS,
+  byId, tagCapFor, roleFit, fittedRating, squadScore, autoAssign, resolveRung,
+  resolvePvP, activeDuos, encodeTeam, decodeTeam, encodeResult, decodeResult };
+`);
 const G = await import(pathToFileURL(tmp).href);
 fs.unlinkSync(tmp);
 
-const { CHARACTERS, LADDER, ROLES, BUDGET, PICKS, byId, tagCapFor, fittedRating,
-        resolveRung, encodeTeam, decodeTeam, encodeResult, decodeResult } = G;
+const { CHARACTERS, LADDER, ROLES, BUDGET, PICKS, DUOS, DUO_BONUS, CODEC_IDS,
+        byId, tagCapFor, fittedRating, resolveRung, autoAssign, activeDuos,
+        encodeTeam, decodeTeam, encodeResult, decodeResult } = G;
+
 const roleIds = ROLES.map((r) => r.id);
 const MINCOST = Math.min(...CHARACTERS.map((c) => c.cost));
 const ABILITY_TYPES = ["role_synergy","counter_immune","tag_projection","rival_bonus",
                        "adaptable","clutch","aura_buff","overwhelm"];
-let problems = [];
+const problems = [];
 const fail = (m) => problems.push(m);
 
 // ── 1. data integrity ─────────────────────────────────────────────────────
 const seen = new Set();
 for (const c of CHARACTERS) {
-  if (seen.has(c.id)) fail(`duplicate id: ${c.id}`);
+  if (seen.has(c.id)) fail(`duplicate character id: ${c.id}`);
   seen.add(c.id);
   if (!Number.isFinite(c.rating) || !Number.isFinite(c.cost)) fail(`non-numeric rating/cost: ${c.id}`);
   if (!roleIds.includes(c.role)) fail(`unknown signature role on ${c.id}: ${c.role}`);
@@ -69,11 +68,50 @@ for (const c of CHARACTERS) {
   if (c.ability && !ABILITY_TYPES.includes(c.ability.type)) fail(`unknown ability type on ${c.id}: ${c.ability.type}`);
 }
 for (const rung of LADDER) {
-  if (rung.team.length !== PICKS) fail(`rung ${rung.rung} (${rung.name}) has ${rung.team.length} members, expected ${PICKS}`);
+  if (rung.team.length !== PICKS) fail(`rung ${rung.rung} (${rung.title}) has ${rung.team.length} members, expected ${PICKS}`);
   for (const id of rung.team) if (!byId(id)) fail(`rung ${rung.rung} references missing character: ${id}`);
 }
 
-// ── 2. NaN sweep ──────────────────────────────────────────────────────────
+// ── 2. codec table ────────────────────────────────────────────────────────
+// Share links index into CODEC_IDS. It is append-only: anything that reorders
+// or inserts silently repoints every link already in the wild.
+if (new Set(CODEC_IDS).size !== CODEC_IDS.length) fail("CODEC_IDS contains duplicate ids");
+const unregistered = CHARACTERS.filter((c) => !CODEC_IDS.includes(c.id)).map((c) => c.id);
+if (unregistered.length) fail(`not in CODEC_IDS (APPEND to the end, never insert): ${unregistered.join(", ")}`);
+if (CODEC_IDS.length > 256) fail(`CODEC_IDS has ${CODEC_IDS.length} entries; the 8-bit index addresses only 256`);
+// The first 148 entries are the original alphabetical seed. Everything after is
+// an append. If the seed ever stops being sorted, someone inserted into it.
+const SEED = 148;
+const seed = CODEC_IDS.slice(0, Math.min(SEED, CODEC_IDS.length));
+for (let i = 1; i < seed.length; i++) {
+  if (seed[i] < seed[i - 1]) {
+    fail(`CODEC_IDS seed block is no longer sorted at index ${i} ("${seed[i - 1]}" then "${seed[i]}") — something was inserted instead of appended, which repoints every existing share link`);
+    break;
+  }
+}
+const tombstones = CODEC_IDS.filter((id) => !byId(id));
+
+// ── 3. synergy ────────────────────────────────────────────────────────────
+const pairSeen = new Set();
+for (const [x, y, label, kind] of DUOS) {
+  const cx = byId(x), cy = byId(y);
+  if (!cx) fail(`duo references unknown id: ${x}`);
+  if (!cy) fail(`duo references unknown id: ${y}`);
+  if (x === y) fail(`duo pairs a character with itself: ${x}`);
+  if (!label) fail(`duo ${x} + ${y} has no label`);
+  const key = [x, y].sort().join("~");
+  if (pairSeen.has(key)) fail(`duplicate duo pair: ${x} + ${y}`);
+  pairSeen.add(key);
+  if (cx && cy && cx.series !== cy.series) fail(`cross-series duo: ${x} (${cx.series}) + ${y} (${cy.series})`);
+}
+// Ladder opponents must never earn synergy — that's what keeps the curve honest.
+for (const rung of LADDER) {
+  const opp = autoAssign(rung.team.map(byId));
+  const r = resolveRung(opp, rung);
+  if (r.them.duoBonus !== 0) fail(`rung ${rung.rung} opponent earned synergy +${r.them.duoBonus}`);
+}
+
+// ── 4. NaN sweep ──────────────────────────────────────────────────────────
 let combos = 0;
 for (const c of CHARACTERS) for (const rid of roleIds) for (const rung of LADDER) {
   const r = resolveRung([{ character: c, roleId: rid }], rung);
@@ -81,9 +119,10 @@ for (const c of CHARACTERS) for (const rid of roleIds) for (const rung of LADDER
   if (!Number.isFinite(r.me.total) || !Number.isFinite(r.them.total)) fail(`NaN score: ${c.id} / ${rid} / rung ${rung.rung}`);
 }
 
-// ── team builders ─────────────────────────────────────────────────────────
+// ── team helpers ──────────────────────────────────────────────────────────
+const cost = (t) => t.reduce((s, m) => s + m.character.cost, 0);
 function randomLegalTeam() {
-  for (let attempt = 0; attempt < 200; attempt++) {
+  for (let attempt = 0; attempt < 300; attempt++) {
     const pool = [...CHARACTERS].sort(() => Math.random() - 0.5);
     const team = []; const used = new Set(); let spent = 0;
     for (const rid of roleIds) {
@@ -97,109 +136,105 @@ function randomLegalTeam() {
   }
   return null;
 }
-function greedyBestTeam(iterations = 4000) {
-  let best = null;
-  for (let i = 0; i < iterations; i++) {
-    const pool = [...CHARACTERS].sort(() => Math.random() - 0.5);
-    const team = []; const used = new Set(); let spent = 0;
-    for (const rid of roleIds) {
-      let pick = null, bestVal = -1;
-      for (const c of pool) {
-        if (used.has(c.id)) continue;
-        const reserve = (PICKS - team.length - 1) * MINCOST;
-        if (spent + c.cost + reserve > BUDGET) continue;
-        const v = fittedRating(c, rid);
-        if (v > bestVal) { bestVal = v; pick = c; }
+// Objective: rungs cleared, tie-broken on margin so hill-climbing has a gradient.
+// A plain greedy on fitted rating is duo-blind and understates the real ceiling.
+const objective = (t) => {
+  let cl = 0, margin = 0;
+  for (const r of LADDER) { const s = resolveRung(t, r); margin += s.me.total - s.them.total; if (s.cleared) cl++; }
+  return cl * 1e5 + margin;
+};
+const rungsCleared = (t) => LADDER.reduce((n, r) => n + (resolveRung(t, r).cleared ? 1 : 0), 0);
+function climb(start) {
+  let cur = start, best = objective(start), improved = true;
+  while (improved) {
+    improved = false;
+    for (let i = 0; i < PICKS; i++) {
+      const others = cur.filter((_, j) => j !== i);
+      const used = new Set(others.map((m) => m.character.id));
+      const left = BUDGET - cost(others);
+      for (const c of CHARACTERS) {
+        if (used.has(c.id) || c.cost > left) continue;
+        const cand = cur.map((m, j) => (j === i ? { character: c, roleId: m.roleId } : m));
+        const s = objective(cand);
+        if (s > best) { best = s; cur = cand; improved = true; }
       }
-      if (!pick) break;
-      team.push({ character: pick, roleId: rid }); used.add(pick.id); spent += pick.cost;
+      for (let j = i + 1; j < PICKS; j++) {
+        const cand = cur.map((m, k) =>
+          k === i ? { character: m.character, roleId: cur[j].roleId } :
+          k === j ? { character: m.character, roleId: cur[i].roleId } : m);
+        const s = objective(cand);
+        if (s > best) { best = s; cur = cand; improved = true; }
+      }
     }
-    if (team.length !== PICKS) continue;
-    let cleared = 0;
-    for (const rung of LADDER) if (resolveRung(team, rung).cleared) cleared++;
-    if (!best || cleared > best.cleared) best = { cleared, spent, team };
-    if (best.cleared === LADDER.length) break;
   }
-  return best;
+  return { team: cur, cleared: rungsCleared(cur), spent: cost(cur) };
 }
 
-// ── 3 & 4. ceiling and random average ─────────────────────────────────────
-const best = greedyBestTeam();
-if (!best) fail("couldn't build any legal 7-fighter team within budget — check costs vs BUDGET");
-else if (best.cleared < LADDER.length) fail(`ladder may be unbeatable: strongest team found clears only ${best.cleared}/${LADDER.length}`);
+// ── 5. ceiling ────────────────────────────────────────────────────────────
+let top = null;
+for (let r = 0; r < 30; r++) {
+  const t = randomLegalTeam();
+  if (!t) continue;
+  const res = climb(t);
+  if (!top || res.cleared > top.cleared) top = res;
+  if (top.cleared === LADDER.length) break;
+}
+if (!top) fail("couldn't build any legal team within budget — check costs vs BUDGET");
+else if (top.cleared < LADDER.length) fail(`ladder looks unbeatable: best team found clears ${top.cleared}/${LADDER.length}`);
 
-const N = 1200;
-let sum = 0, n = 0, fullClears = 0;
+// ── 6. random average ─────────────────────────────────────────────────────
+let sum = 0, n = 0, full = 0, withDuo = 0;
 const hist = new Array(LADDER.length + 1).fill(0);
-for (let i = 0; i < N; i++) {
+for (let i = 0; i < 1500; i++) {
   const t = randomLegalTeam();
   if (!t) continue;
   let reached = 0;
   for (const rung of LADDER) { if (resolveRung(t, rung).cleared) reached++; else break; }
   sum += reached; n++; hist[reached]++;
-  if (reached === LADDER.length) fullClears++;
+  if (reached === LADDER.length) full++;
+  if (activeDuos(t).length) withDuo++;
 }
-const avg = n ? sum / n : 0;
-if (n && fullClears / n > 0.05) fail(`ladder too easy: ${(100 * fullClears / n).toFixed(1)}% of random teams clear it (want under 5%)`);
+if (n && full / n > 0.05) fail(`ladder too easy: ${(100 * full / n).toFixed(1)}% of random teams clear it (want under 5%)`);
 
-// ── 5. codec roundtrips ───────────────────────────────────────────────────
-let codecChecks = 0, codecFails = 0;
+// ── 7. codec roundtrip ────────────────────────────────────────────────────
+let checks = 0, broken = 0;
 for (let i = 0; i < 400; i++) {
   const t = randomLegalTeam();
   if (!t) continue;
   const tc = decodeTeam(encodeTeam(t));
-  codecChecks++;
-  if (!tc || tc.error || tc.team.some((m, j) => m.character.id !== t[j].character.id || m.roleId !== t[j].roleId)) codecFails++;
+  checks++;
+  if (!tc || tc.error || tc.team.some((m, j) => m.character.id !== t[j].character.id || m.roleId !== t[j].roleId)) broken++;
   for (const reached of [0, 1, 7, 10]) {
     const rr = decodeResult(encodeResult(t, reached));
-    codecChecks++;
+    checks++;
     if (!rr || rr.error || rr.reached !== reached ||
-        rr.team.some((m, j) => m.character.id !== t[j].character.id || m.roleId !== t[j].roleId)) codecFails++;
+        rr.team.some((m, j) => m.character.id !== t[j].character.id || m.roleId !== t[j].roleId)) broken++;
   }
 }
-if (codecFails) fail(`${codecFails}/${codecChecks} codec roundtrips failed`);
-if (CHARACTERS.length > 256) fail(`roster is ${CHARACTERS.length} — the 8-bit character index in the codec only addresses 256`);
-
-// ── 6. share-code drift ───────────────────────────────────────────────────
-// The codec indexes into the roster ids sorted alphabetically, so ANY added,
-// removed or renamed id shifts the indices and makes every previously shared
-// link silently decode to different fighters. Pin a hash so that's visible.
-const rosterHash = crypto.createHash("sha256")
-  .update(CHARACTERS.map((c) => c.id).sort().join("|")).digest("hex").slice(0, 12);
-const pinPath = ".roster-hash";
-let drift = null;
-if (fs.existsSync(pinPath)) {
-  const pinned = fs.readFileSync(pinPath, "utf8").trim();
-  if (pinned !== rosterHash) drift = pinned;
-} else {
-  fs.writeFileSync(pinPath, rosterHash + "\n");
-}
+if (broken) fail(`${broken}/${checks} codec roundtrips failed`);
 
 // ── report ────────────────────────────────────────────────────────────────
-const line = (s = "") => console.log(s);
-line("animeVS health check — " + SRC);
-line("─".repeat(58));
-line(`roster            ${CHARACTERS.length} characters, ${new Set(CHARACTERS.map(c=>c.series)).size} series`);
-line(`ladder            ${LADDER.length} rungs`);
-line(`NaN sweep         ${combos.toLocaleString()} character × role × rung combos`);
-line(`ceiling           ${best ? best.cleared + "/" + LADDER.length + " rungs, " + best.spent + "/" + BUDGET + " credits" : "n/a"}`);
-if (best) line(`                  ${best.team.map(m => m.character.name + " (" + m.roleId + ")").join(", ")}`);
-line(`random teams      avg ${avg.toFixed(2)} rungs over ${n} runs, ${fullClears} full clears (${(100*fullClears/Math.max(n,1)).toFixed(1)}%)`);
-line(`                  distribution 0→${LADDER.length}: ${hist.join(" ")}`);
-line(`codec             ${codecChecks - codecFails}/${codecChecks} roundtrips ok, ${256 - CHARACTERS.length} slots of index headroom`);
-line(`roster hash       ${rosterHash}${drift ? "  (was " + drift + ")" : ""}`);
-line();
-if (drift) {
-  line("⚠  Roster changed since the pinned hash.");
-  line("   Every team/result link shared before this change now decodes to");
-  line("   DIFFERENT fighters — silently, because the checksum still passes.");
-  line("   Bump the code version tag (V2→V3, R1→R2) before deploying, then");
-  line(`   run: echo ${rosterHash} > ${pinPath}`);
-  line();
+const L = (s = "") => console.log(s);
+L(`animeVS health check — ${SRC}`);
+L("─".repeat(60));
+L(`roster       ${CHARACTERS.length} characters, ${new Set(CHARACTERS.map((c) => c.series)).size} series`);
+L(`codec table  ${CODEC_IDS.length}/256 slots used, ${256 - CODEC_IDS.length} free${tombstones.length ? `, ${tombstones.length} tombstone(s)` : ""}`);
+L(`synergy      ${DUOS.length} duos at +${DUO_BONUS} each, opponents +0 on every rung`);
+L(`NaN sweep    ${combos.toLocaleString()} character × role × rung combos`);
+L(`ceiling      ${top ? `${top.cleared}/${LADDER.length} rungs, ${top.spent}/${BUDGET} credits` : "n/a"}`);
+if (top) {
+  L(`             ${top.team.map((m) => m.character.name).join(", ")}`);
+  const d = activeDuos(top.team);
+  if (d.length) L(`             duos: ${d.length} (+${d.length * DUO_BONUS}) — ${d.map((x) => x.label).join(", ")}`);
 }
+L(`random teams avg ${(sum / Math.max(n, 1)).toFixed(2)} rungs over ${n} runs, ${full} full clears (${(100 * full / Math.max(n, 1)).toFixed(1)}%)`);
+L(`             ${(100 * withDuo / Math.max(n, 1)).toFixed(1)}% land at least one duo by chance`);
+L(`             distribution 0→${LADDER.length}: ${hist.join(" ")}`);
+L(`codec        ${checks - broken}/${checks} roundtrips ok`);
+L();
 if (problems.length) {
-  line(`✗ ${problems.length} problem${problems.length > 1 ? "s" : ""}:`);
-  for (const p of problems) line("  · " + p);
+  L(`✗ ${problems.length} problem${problems.length > 1 ? "s" : ""}:`);
+  for (const p of problems) L("  · " + p);
   process.exit(1);
 }
-line("✓ all checks passed");
+L("✓ all checks passed");
