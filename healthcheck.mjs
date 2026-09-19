@@ -45,6 +45,14 @@ export { CHARACTERS, LADDER, ROLES, BUDGET, PICKS, DUOS, DUO_BONUS, CODEC_IDS,
 const G = await import(pathToFileURL(tmp).href);
 fs.unlinkSync(tmp);
 
+// The Daily puzzle's data lives beside App.jsx and is checked too when present.
+let FACTS = null;
+const factsPath = path.join(path.dirname(SRC), "animeFacts.js");
+if (fs.existsSync(factsPath)) {
+  try { FACTS = await import(pathToFileURL(factsPath).href); }
+  catch (e) { console.error("animeFacts.js exists but failed to load: " + e.message); process.exit(1); }
+}
+
 const { CHARACTERS, LADDER, ROLES, BUDGET, PICKS, DUOS, DUO_BONUS, CODEC_IDS,
         byId, tagCapFor, fittedRating, resolveRung, autoAssign, activeDuos,
         encodeTeam, decodeTeam, encodeResult, decodeResult } = G;
@@ -109,6 +117,44 @@ for (const rung of LADDER) {
   const opp = autoAssign(rung.team.map(byId));
   const r = resolveRung(opp, rung);
   if (r.them.duoBonus !== 0) fail(`rung ${rung.rung} opponent earned synergy +${r.them.duoBonus}`);
+}
+
+// ── 3b. daily puzzle facts ────────────────────────────────────────────────
+let dailyLine = "not present";
+if (FACTS) {
+  for (const p of FACTS.validateFacts(CHARACTERS)) fail("daily facts: " + p);
+  // Every character must be reachable as an answer, and the cycle must not
+  // repeat anyone inside one full rotation.
+  const seen = new Set();
+  let repeats = 0;
+  for (let d = 0; d < CHARACTERS.length; d++) {
+    const c = FACTS.dailyCharacter(CHARACTERS, new Date(Date.now() + d * 86400000));
+    if (seen.has(c.id)) repeats++;
+    seen.add(c.id);
+  }
+  if (repeats) fail(`daily: ${repeats} repeat(s) inside one ${CHARACTERS.length}-day cycle`);
+  if (seen.size !== CHARACTERS.length) fail(`daily: only ${seen.size}/${CHARACTERS.length} characters can ever be the answer`);
+  // Solve rate, played the way a clue-tracking person plays.
+  const playOnce = (ans) => {
+    let pool = [...CHARACTERS];
+    for (let n = 1; n <= FACTS.GUESSES; n++) {
+      const g = pool[Math.floor(Math.random() * pool.length)];
+      if (g.id === ans.id) return n;
+      const k = FACTS.compare(g, ans).map((x) => x.state).join("|");
+      pool = pool.filter((p) => FACTS.compare(g, p).map((x) => x.state).join("|") === k && p.id !== g.id);
+      if (!pool.length) return null;
+    }
+    return null;
+  };
+  let solved = 0, plays = 0, total = 0;
+  for (const c of CHARACTERS) for (let r = 0; r < 8; r++) {
+    const n = playOnce(c); plays++;
+    if (n) { solved++; total += n; }
+  }
+  const rate = 100 * solved / plays;
+  dailyLine = `${Object.keys(FACTS.CHARACTER_FACTS).length} fact rows, ${FACTS.COLUMNS.length} columns, ${FACTS.GUESSES} guesses — ${rate.toFixed(1)}% solved, avg ${(total / solved).toFixed(2)}`;
+  if (rate < 80) fail(`daily too hard: only ${rate.toFixed(1)}% solved within ${FACTS.GUESSES} guesses`);
+  if (rate > 99.5) fail(`daily too easy: ${rate.toFixed(1)}% solved — consider removing a column`);
 }
 
 // ── 4. NaN sweep ──────────────────────────────────────────────────────────
@@ -231,6 +277,7 @@ L(`random teams avg ${(sum / Math.max(n, 1)).toFixed(2)} rungs over ${n} runs, $
 L(`             ${(100 * withDuo / Math.max(n, 1)).toFixed(1)}% land at least one duo by chance`);
 L(`             distribution 0→${LADDER.length}: ${hist.join(" ")}`);
 L(`codec        ${checks - broken}/${checks} roundtrips ok`);
+L(`daily        ${dailyLine}`);
 L();
 if (problems.length) {
   L(`✗ ${problems.length} problem${problems.length > 1 ? "s" : ""}:`);

@@ -2,6 +2,7 @@ import React, { useState, useMemo } from "react";
 import { Analytics } from "@vercel/analytics/react";
 import { SpeedInsights } from "@vercel/speed-insights/react";
 import { supabase, supabaseConfigured } from "./supabaseClient.js";
+import DailyGame from "./DailyGame.jsx";
 
 // ─── ROSTER (150) ───────────────────────────────────────────────────────────
 const CHARACTERS = [
@@ -151,6 +152,14 @@ const CHARACTERS = [
   { id:"ban-seven-deadly-sins", name:"Ban", series:"Seven Deadly Sins", tier:"A", cost:7, rating:87, tags:["aura","regen","melee","mobility","energy","speed"], role:"damage", ability:{ name:"Battle Aura", type:"role_synergy", x:3, role:"damage" } },
   { id:"merlin-seven-deadly-sins", name:"Merlin", series:"Seven Deadly Sins", tier:"B", cost:6, rating:82, tags:["barrier","element","heal","transform","energy"], role:"healer", ability:{ name:"Guard Field", type:"tag_projection", tag:"barrier" } },
   { id:"gowther-seven-deadly-sins", name:"Gowther", series:"Seven Deadly Sins", tier:"B", cost:6, rating:80, tags:["range","element","stealth","speed","psychic"], role:"support", ability:{ name:"Elemental Burst", type:"role_synergy", x:4, role:"damage" } },
+  { id:"sasuke-naruto", name:"Sasuke", series:"Naruto", tier:"SS", cost:10, rating:97, tags:["melee","element","range","speed","mobility","aura","summon","energy","transform"], role:"damage", ability:{ name:"Amaterasu", type:"role_synergy", x:8, role:"damage" } },
+  { id:"orochimaru-naruto", name:"Orochimaru", series:"Naruto", tier:"S", cost:7, rating:88, tags:["summon","regen","stealth","melee","transform","psychic","mobility"], role:"support", ability:{ name:"Immortality", type:"clutch", x:7 } },
+  { id:"sakura-naruto", name:"Sakura", series:"Naruto", tier:"B", cost:4, rating:78, tags:["heal","melee","aura","summon","energy"], role:"healer", ability:{ name:"Byakugo Seal", type:"role_synergy", x:6, role:"healer" } },
+  { id:"yamamoto-bleach", name:"Yamamoto", series:"Bleach", tier:"SS", cost:10, rating:96, tags:["element","aura","melee","energy","range","barrier","speed","mobility","transform"], role:"captain", ability:{ name:"Zanka no Tachi", type:"overwhelm", x:8 } },
+  { id:"renji-bleach", name:"Renji", series:"Bleach", tier:"A", cost:6, rating:84, tags:["melee","range","energy","speed","transform","aura"], role:"damage", ability:{ name:"Bankai: Zabimaru", type:"role_synergy", x:5, role:"vice" } },
+  { id:"orihime-bleach", name:"Orihime", series:"Bleach", tier:"C", cost:3, rating:68, tags:["heal","barrier","regen","summon"], role:"healer", ability:{ name:"Rejection of Fate", type:"role_synergy", x:7, role:"healer" } },
+  { id:"roger-one-piece", name:"Gol D. Roger", series:"One Piece", tier:"SS", cost:11, rating:98, tags:["melee","aura","range","speed","mobility","energy","element","transform","barrier"], role:"captain", ability:{ name:"King of the Pirates", type:"aura_buff", x:7 } },
+  { id:"whitebeard-one-piece", name:"Whitebeard", series:"One Piece", tier:"SS", cost:10, rating:96, tags:["giant","melee","barrier","aura","element","range","energy","mobility","speed"], role:"tank", ability:{ name:"Tremor-Tremor Fruit", type:"role_synergy", x:9, role:"tank" } },
   { id:"kaneki-tokyo-ghoul", name:"Kaneki", series:"Tokyo Ghoul", tier:"A", cost:7, rating:84, tags:["mobility","melee","range","speed","regen","transform"], role:"damage", ability:{ name:"Blinding Speed", type:"role_synergy", x:4, role:"captain" } },
   { id:"touka-tokyo-ghoul", name:"Touka", series:"Tokyo Ghoul", tier:"B", cost:3, rating:74, tags:["melee","mobility","stealth","speed"], role:"support", ability:{ name:"Fighting Spirit", type:"adaptable", x:4 } },
 ];
@@ -452,6 +461,26 @@ const DUOS = [
   ["julius-black-clover", "yami-black-clover", "Wizard King & Captain", "bond"],
   ["asta-black-clover", "noelle-black-clover", "Black Bulls", "bond"],
   ["kaneki-tokyo-ghoul", "touka-tokyo-ghoul", "Anteiku Bond", "bond"],
+  // ── unlocked by the roster expansion ──
+  ["naruto-naruto", "sasuke-naruto", "Sworn Rivals", "rival"],
+  ["itachi-naruto", "sasuke-naruto", "Uchiha Brothers", "family"],
+  ["orochimaru-naruto", "sasuke-naruto", "Master & Student", "mentor"],
+  ["kakashi-naruto", "sasuke-naruto", "Team 7", "bond"],
+  ["naruto-naruto", "sakura-naruto", "Team 7", "bond"],
+  ["sasuke-naruto", "sakura-naruto", "Team 7", "bond"],
+  ["kakashi-naruto", "sakura-naruto", "Team 7", "bond"],
+  ["tsunade-naruto", "sakura-naruto", "Master & Student", "mentor"],
+  ["jiraiya-naruto", "orochimaru-naruto", "Legendary Sannin", "bond"],
+  ["tsunade-naruto", "orochimaru-naruto", "Legendary Sannin", "bond"],
+  ["ichigo-bleach", "orihime-bleach", "Karakura Bond", "bond"],
+  ["ichigo-bleach", "renji-bleach", "Clashing Blades", "rival"],
+  ["byakuya-bleach", "renji-bleach", "Captain & Lieutenant", "mentor"],
+  ["yamamoto-bleach", "kenpachi-bleach", "Gotei 13", "bond"],
+  ["yamamoto-bleach", "byakuya-bleach", "Gotei 13", "bond"],
+  ["roger-one-piece", "shanks-one-piece", "Captain & Apprentice", "mentor"],
+  ["roger-one-piece", "whitebeard-one-piece", "Rival Emperors", "rival"],
+  ["whitebeard-one-piece", "ace-one-piece", "Father & Son", "family"],
+  ["luffy-one-piece", "roger-one-piece", "Inherited Will", "mentor"],
 ];
 
 // Guard: a typo'd id would silently create a duo that can never trigger.
@@ -646,7 +675,11 @@ const CODEC_IDS = [
   "yoruichi-bleach", "yuji-itadori-jujutsu-kaisen", "yuno-black-clover",
   "yuta-jujutsu-kaisen", "zagred-black-clover", "zeke-attack-on-titan",
   "zeldris-seven-deadly-sins", "zenitsu-demon-slayer", "zeref-fairy-tail",
-  "zoro-one-piece"
+  "zoro-one-piece",
+  // ── appended after the original alphabetical seed (never reorder above) ──
+  "sasuke-naruto", "orochimaru-naruto", "sakura-naruto",
+  "yamamoto-bleach", "renji-bleach", "orihime-bleach",
+  "roger-one-piece", "whitebeard-one-piece"
 ];
 
 // Guard: catches the mistake above at dev time instead of in users' links.
@@ -784,9 +817,10 @@ export default function App() {
       const params = new URLSearchParams(window.location.search);
       if (params.get("result")) return "result";
       if (params.get("room")) return "pvp";
+      if (params.has("daily")) return "daily";
     } catch (e) {}
     return null;
-  }); // null | "draft" | "spin" | "pvp" | "result"
+  }); // null | "draft" | "spin" | "pvp" | "daily" | "result"
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
   return (
@@ -800,6 +834,7 @@ export default function App() {
           {mode === "draft" && <DraftMode />}
           {mode === "spin" && <SpinMode />}
           {mode === "pvp" && <PvpMode />}
+          {mode === "daily" && <DailyGame characters={CHARACTERS} />}
           {mode === "result" && <SharedResultView setMode={setMode} />}
         </div>
       </div>
@@ -1390,6 +1425,7 @@ function Home({ setMode }) {
     { id:"spin", title:"SPIN", tagline:"Spin the reel. Take it or risk another. Slot fighters into seven roles.", accent:RED },
     { id:"draft", title:"DRAFT", tagline:"Five draws, one budget. Build the sharpest squad you can afford.", accent:"#3b82f6" },
     { id:"pvp", title:"VERSUS", tagline:"Create or join a live room. Build blind, then reveal.", accent:"#a855f7" },
+    { id:"daily", title:"DAILY", tagline:"One mystery character, seven guesses. Same puzzle for everyone, every day.", accent:"#fbbf24" },
   ];
   return (
     <div className="tIn">
