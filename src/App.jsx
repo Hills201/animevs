@@ -289,7 +289,7 @@ function applyStrongestCounterImmunity(score) {
   const nextDetails = score.edgeDetails.slice(1);
   return {
     ...score,
-    total: score.total - blocked.bonus,
+    total: score.total - blocked.bonus,   // duoBonus is untouched — immunity blocks counters, not synergy
     bonus: score.bonus - blocked.bonus,
     edgeDetails: nextDetails,
     edges: nextDetails.map((e) => e.label),
@@ -357,6 +357,138 @@ function auraTargets(team) {
 }
 
 // team is array of { character, roleId }. ctx carries rung info for abilities.
+// ─── SQUAD SYNERGY (duos) ──────────────────────────────────────────────────
+// Certain canonical pairings — family, mentor/student, sworn rivals, lifelong
+// partners — pay a flat bonus when BOTH fighters are on your squad. Flat, like
+// every other scoring layer, so the breakdown still adds up in a player's head.
+//
+// Rules of the system:
+//   · Both fighters must be on the squad. Role placement doesn't matter.
+//   · Every matching pair pays out, so three-character groups (the Shiganshina
+//     Trio, the Chainsaw Man flatshare) are listed as their three pairs and
+//     stack to +36.
+//   · Pairs are always same-series — checked by a guard below.
+//   · SOLO LADDER: synergy is the PLAYER'S bonus only. The ladder squads are
+//     canon teams stuffed with duos (Goku/Vegeta, Naruto/Minato, Saitama/Genos),
+//     and letting them claim it would hand the most points to the hardest rungs
+//     while rungs 1, 3, 5 and 7 got nothing. In PvP both sides get synergy,
+//     because both sides are players who drafted for it.
+const DUO_BONUS = 12;
+const DUOS = [
+  ["naruto-naruto", "minato-naruto", "Father & Son", "family"],
+  ["naruto-naruto", "jiraiya-naruto", "Master & Student", "mentor"],
+  ["naruto-naruto", "kakashi-naruto", "Sensei & Student", "mentor"],
+  ["naruto-naruto", "gaara-naruto", "Kindred Jinchuriki", "bond"],
+  ["kakashi-naruto", "might-guy-naruto", "Eternal Rivals", "rival"],
+  ["hashirama-naruto", "madara-naruto", "Rivals of the Valley", "rival"],
+  ["itachi-naruto", "obito-naruto", "Akatsuki Cell", "bond"],
+  ["jiraiya-naruto", "tsunade-naruto", "Legendary Sannin", "bond"],
+  ["minato-naruto", "kakashi-naruto", "Captain & Squad", "mentor"],
+  ["goku-dragon-ball", "gohan-dragon-ball", "Father & Son", "family"],
+  ["goku-dragon-ball", "vegeta-dragon-ball", "Eternal Rivals", "rival"],
+  ["vegeta-dragon-ball", "trunks-dragon-ball", "Father & Son", "family"],
+  ["gohan-dragon-ball", "piccolo-dragon-ball", "Mentor & Student", "mentor"],
+  ["goku-dragon-ball", "beerus-dragon-ball", "God & Challenger", "rival"],
+  ["gojo-satoru-jujutsu-kaisen", "geto-jujutsu-kaisen", "The Strongest Duo", "bond"],
+  ["sukuna-jujutsu-kaisen", "yuji-itadori-jujutsu-kaisen", "Vessel & Curse", "bond"],
+  ["yuji-itadori-jujutsu-kaisen", "megumi-jujutsu-kaisen", "Sworn Allies", "bond"],
+  ["yuji-itadori-jujutsu-kaisen", "nobara-jujutsu-kaisen", "First Years", "bond"],
+  ["megumi-jujutsu-kaisen", "nobara-jujutsu-kaisen", "First Years", "bond"],
+  ["gojo-satoru-jujutsu-kaisen", "megumi-jujutsu-kaisen", "Teacher & Student", "mentor"],
+  ["ichigo-bleach", "kisuke-bleach", "Shopkeeper & Substitute", "mentor"],
+  ["ichigo-bleach", "byakuya-bleach", "Clashing Blades", "rival"],
+  ["ichigo-bleach", "yoruichi-bleach", "Trainer & Trainee", "mentor"],
+  ["aizen-bleach", "yhwach-bleach", "Architects of War", "rival"],
+  ["luffy-one-piece", "ace-one-piece", "Sworn Brothers", "family"],
+  ["zoro-one-piece", "sanji-one-piece", "Eternal Rivals", "rival"],
+  ["luffy-one-piece", "zoro-one-piece", "Captain & First Mate", "bond"],
+  ["luffy-one-piece", "shanks-one-piece", "Inherited Will", "mentor"],
+  ["zoro-one-piece", "mihawk-one-piece", "Master & Student", "mentor"],
+  ["gon-hunter-x-hunter", "killua-hunter-x-hunter", "Best Friends", "bond"],
+  ["killua-hunter-x-hunter", "illumi-hunter-x-hunter", "Zoldyck Brothers", "family"],
+  ["netero-hunter-x-hunter", "meruem-hunter-x-hunter", "The Final Duel", "rival"],
+  ["hisoka-hunter-x-hunter", "chrollo-hunter-x-hunter", "Obsession", "rival"],
+  ["gon-hunter-x-hunter", "biscuit-hunter-x-hunter", "Master & Student", "mentor"],
+  ["tanjiro-demon-slayer", "zenitsu-demon-slayer", "Demon Slayer Corps", "bond"],
+  ["tanjiro-demon-slayer", "inosuke-demon-slayer", "Demon Slayer Corps", "bond"],
+  ["zenitsu-demon-slayer", "inosuke-demon-slayer", "Demon Slayer Corps", "bond"],
+  ["tanjiro-demon-slayer", "giyu-demon-slayer", "Water Breathing", "mentor"],
+  ["muzan-demon-slayer", "kokushibo-demon-slayer", "Master & Upper Moon", "bond"],
+  ["giyu-demon-slayer", "shinobu-demon-slayer", "Hashira Pair", "bond"],
+  ["deku-my-hero-academia", "bakugo-my-hero-academia", "Childhood Rivals", "rival"],
+  ["endeavor-my-hero-academia", "todoroki-my-hero-academia", "Father & Son", "family"],
+  ["endeavor-my-hero-academia", "dabi-my-hero-academia", "Father & Son", "family"],
+  ["todoroki-my-hero-academia", "dabi-my-hero-academia", "Brothers", "family"],
+  ["deku-my-hero-academia", "aizawa-my-hero-academia", "Teacher & Student", "mentor"],
+  ["shigaraki-my-hero-academia", "dabi-my-hero-academia", "League of Villains", "bond"],
+  ["eren-titan-attack-on-titan", "mikasa-attack-on-titan", "Shiganshina Trio", "bond"],
+  ["eren-titan-attack-on-titan", "armin-attack-on-titan", "Shiganshina Trio", "bond"],
+  ["mikasa-attack-on-titan", "armin-attack-on-titan", "Shiganshina Trio", "bond"],
+  ["levi-attack-on-titan", "erwin-attack-on-titan", "Commander & Captain", "mentor"],
+  ["eren-titan-attack-on-titan", "zeke-attack-on-titan", "Half Brothers", "family"],
+  ["edward-elric-fullmetal-alchemist", "alphonse-fullmetal-alchemist", "Elric Brothers", "family"],
+  ["edward-elric-fullmetal-alchemist", "roy-mustang-fullmetal-alchemist", "Colonel & Major", "mentor"],
+  ["roy-mustang-fullmetal-alchemist", "olivier-fullmetal-alchemist", "Fellow Officers", "bond"],
+  ["denji-chainsaw-man", "power-chainsaw-man", "Devil Roommates", "bond"],
+  ["denji-chainsaw-man", "aki-chainsaw-man", "Devil Roommates", "bond"],
+  ["aki-chainsaw-man", "power-chainsaw-man", "Devil Roommates", "bond"],
+  ["makima-chainsaw-man", "denji-chainsaw-man", "Master & Hound", "bond"],
+  ["kishibe-chainsaw-man", "aki-chainsaw-man", "Mentor & Devil Hunter", "mentor"],
+  ["natsu-fairy-tail", "gray-fairy-tail", "Eternal Rivals", "rival"],
+  ["natsu-fairy-tail", "erza-fairy-tail", "Fairy Tail Team", "bond"],
+  ["zeref-fairy-tail", "natsu-fairy-tail", "Brothers", "family"],
+  ["mavis-fairy-tail", "zeref-fairy-tail", "The Cursed Pair", "bond"],
+  ["gildarts-fairy-tail", "natsu-fairy-tail", "Mentor & Student", "mentor"],
+  ["escanor-seven-deadly-sins", "meliodas-seven-deadly-sins", "Pride & Wrath", "bond"],
+  ["meliodas-seven-deadly-sins", "zeldris-seven-deadly-sins", "Demon Brothers", "family"],
+  ["meliodas-seven-deadly-sins", "estarossa-seven-deadly-sins", "Demon Brothers", "family"],
+  ["meliodas-seven-deadly-sins", "ban-seven-deadly-sins", "Best Friends", "bond"],
+  ["saitama-one-punch-man", "genos-one-punch-man", "Master & Disciple", "mentor"],
+  ["bang-one-punch-man", "garou-one-punch-man", "Master & Student", "mentor"],
+  ["saitama-one-punch-man", "garou-one-punch-man", "The Final Fight", "rival"],
+  ["blast-one-punch-man", "tatsumaki-one-punch-man", "S-Class Elite", "bond"],
+  ["asta-black-clover", "yuno-black-clover", "Sworn Rivals", "rival"],
+  ["yami-black-clover", "asta-black-clover", "Captain & Rookie", "mentor"],
+  ["julius-black-clover", "yami-black-clover", "Wizard King & Captain", "bond"],
+  ["asta-black-clover", "noelle-black-clover", "Black Bulls", "bond"],
+  ["kaneki-tokyo-ghoul", "touka-tokyo-ghoul", "Anteiku Bond", "bond"],
+];
+
+// Guard: a typo'd id would silently create a duo that can never trigger.
+if (typeof console !== "undefined") {
+  const unknown = [];
+  for (const [a, b] of DUOS) {
+    if (!byId(a)) unknown.push(a);
+    if (!byId(b)) unknown.push(b);
+  }
+  if (unknown.length) console.error("[animeVS synergy] DUOS references unknown character ids:\n  " + [...new Set(unknown)].join("\n  "));
+}
+
+// Returns every duo active on a squad. `team` is [{character, roleId}].
+function activeDuos(team) {
+  const ids = new Set(team.filter(Boolean).map((m) => m.character.id));
+  const list = [];
+  for (const [a, b, label, kind] of DUOS) {
+    if (ids.has(a) && ids.has(b)) list.push({ a, b, label, kind, bonus: DUO_BONUS });
+  }
+  return list;
+}
+
+// Pairs a character could still complete, given who's already placed. Drives
+// the "one more to go" hints — the whole reason Spin players can see this
+// system at all, since only ~5% of random squads stumble into a duo.
+function potentialDuos(character, team) {
+  if (!character) return [];
+  const ids = new Set(team.filter(Boolean).map((m) => m.character.id));
+  if (ids.has(character.id)) return [];
+  const list = [];
+  for (const [a, b, label, kind] of DUOS) {
+    if (a === character.id && ids.has(b)) list.push({ partner: byId(b), label, kind });
+    else if (b === character.id && ids.has(a)) list.push({ partner: byId(a), label, kind });
+  }
+  return list;
+}
+
 function squadScore(myTeam, oppChars, boost = 1, ctx = {}) {
   const clean = myTeam.filter(Boolean);
   const chars = clean.map((m) => m.character);
@@ -396,7 +528,12 @@ function squadScore(myTeam, oppChars, boost = 1, ctx = {}) {
   const bonus = edgeDetails.reduce((sum, edge) => sum + edge.bonus, 0);
   const edges = edgeDetails.map((edge) => edge.label);
   const hasImmunity = clean.some((m) => m.character.ability && m.character.ability.type === "counter_immune");
-  return { total: base + bonus, base, bonus, edges, edgeDetails, abilityNotes: [...new Set(abilityNotes)], hasImmunity };
+  // Synergy: on by default; the ladder's opponent side passes synergy:false.
+  const duoDetails = ctx.synergy === false ? [] : activeDuos(clean);
+  const duoBonus = duoDetails.reduce((sum, d) => sum + d.bonus, 0);
+  return { total: base + bonus + duoBonus, base, bonus, duoBonus, duoDetails,
+    duos: duoDetails.map((d) => d.label), edges, edgeDetails,
+    abilityNotes: [...new Set(abilityNotes)], hasImmunity };
 }
 
 // Opponent squads are auto-assigned to roles by best fit (so they get fair role bonuses too)
@@ -415,8 +552,8 @@ function autoAssign(chars) {
 function resolveRung(myTeam, rung) {
   const oppChars = rung.team.map(byId);
   const oppTeam = autoAssign(oppChars);
-  const meCtx = { rungNumber: rung.rung, universe: rung.universe };
-  const themCtx = { rungNumber: rung.rung, universe: null };
+  const meCtx = { rungNumber: rung.rung, universe: rung.universe, synergy: true };
+  const themCtx = { rungNumber: rung.rung, universe: null, synergy: false };
   let me = squadScore(myTeam, oppChars, 1, meCtx);
   let them = squadScore(oppTeam, myTeam.map((m) => m.character), rung.boost, themCtx);
   // counter_immune cancels the strongest active enemy counter, not simply the
@@ -430,8 +567,8 @@ function resolveRung(myTeam, rung) {
 function resolvePvP(teamA, teamB) {
   const charsA = teamA.map((m) => m.character);
   const charsB = teamB.map((m) => m.character);
-  let a = squadScore(teamA, charsB, 1, { rungNumber: 5, universe: null });
-  let b = squadScore(teamB, charsA, 1, { rungNumber: 5, universe: null });
+  let a = squadScore(teamA, charsB, 1, { rungNumber: 5, universe: null, synergy: true });
+  let b = squadScore(teamB, charsA, 1, { rungNumber: 5, universe: null, synergy: true });
   // mutual counter immunity: each side cancels the opponent's strongest edge.
   if (a.hasImmunity) b = applyStrongestCounterImmunity(b);
   if (b.hasImmunity) a = applyStrongestCounterImmunity(a);
@@ -442,7 +579,89 @@ function resolvePvP(teamA, teamB) {
 // ─── TEAM CODEC (order-independent, checksummed) ────────────────────────────
 const CODEC_ROLES = ROLES.map((r) => r.id); // dynamic: all roles in order
 const SLOT_COUNT = CODEC_ROLES.length;
-const SORTED_IDS = CHARACTERS.map((c) => c.id).sort();
+// ─── FROZEN CODEC ID TABLE ─────────────────────────────────────────────────
+// A team/result code stores each fighter as an INDEX into this list. The list
+// is therefore frozen: it was seeded from the roster's alphabetical order at
+// the time share links first shipped, and every code ever generated points
+// into these exact positions.
+//
+//   *** NEVER insert, reorder, rename or delete an entry. ***
+//   *** New characters are APPENDED to the end, always. ***
+//
+// Inserting a name that sorts early (say "Renji") would shift every index
+// after it, and every link already shared would silently decode to a
+// DIFFERENT squad — the checksum only covers the payload, not the roster, so
+// nothing would look broken. If a character is retired from CHARACTERS, leave
+// its id here as a tombstone; decoding an old code that references it returns
+// a clean "unknown fighter" error instead of the wrong fighter.
+//
+// Capacity is 256 (the index is 8 bits per slot).
+const CODEC_IDS = [
+  "ace-one-piece", "aizawa-my-hero-academia", "aizen-bleach",
+  "akaza-demon-slayer", "aki-chainsaw-man", "alphonse-fullmetal-alchemist",
+  "android-18-dragon-ball", "armin-attack-on-titan", "asta-black-clover",
+  "atomic-samurai-one-punch-man", "bakugo-my-hero-academia", "ban-seven-deadly-sins",
+  "bang-one-punch-man", "beam-chainsaw-man", "beerus-dragon-ball",
+  "biscuit-hunter-x-hunter", "blast-one-punch-man", "boros-one-punch-man",
+  "broly-dragon-ball", "byakuya-bleach", "cell-dragon-ball",
+  "choso-jujutsu-kaisen", "chrollo-hunter-x-hunter", "crocodile-one-piece",
+  "dabi-my-hero-academia", "deku-my-hero-academia", "denji-chainsaw-man",
+  "doflamingo-one-piece", "doma-demon-slayer", "edward-elric-fullmetal-alchemist",
+  "endeavor-my-hero-academia", "eren-titan-attack-on-titan", "erwin-attack-on-titan",
+  "erza-fairy-tail", "escanor-seven-deadly-sins", "estarossa-seven-deadly-sins",
+  "father-fullmetal-alchemist", "feitan-hunter-x-hunter", "gaara-naruto",
+  "garou-one-punch-man", "genos-one-punch-man", "geto-jujutsu-kaisen",
+  "gildarts-fairy-tail", "giyu-demon-slayer", "gohan-dragon-ball",
+  "gojo-satoru-jujutsu-kaisen", "goku-dragon-ball", "gon-hunter-x-hunter",
+  "gowther-seven-deadly-sins", "gran-torino-my-hero-academia", "gray-fairy-tail",
+  "greed-fullmetal-alchemist", "gremmy-bleach", "gyomei-demon-slayer",
+  "hakari-jujutsu-kaisen", "hashirama-naruto", "hisoka-hunter-x-hunter",
+  "historia-attack-on-titan", "ichigo-bleach", "illumi-hunter-x-hunter",
+  "inosuke-demon-slayer", "itachi-naruto", "jean-attack-on-titan",
+  "jellal-fairy-tail", "jiraiya-naruto", "jiren-dragon-ball",
+  "julius-black-clover", "kaido-one-piece", "kakashi-naruto",
+  "kaneki-tokyo-ghoul", "katana-man-chainsaw-man", "kenpachi-bleach",
+  "killua-hunter-x-hunter", "king-bradley-fullmetal-alchemist", "kishibe-chainsaw-man",
+  "kisuke-bleach", "kokushibo-demon-slayer", "kurapika-hunter-x-hunter",
+  "law-one-piece", "laxus-fairy-tail", "levi-attack-on-titan",
+  "luffy-one-piece", "madara-naruto", "mahito-jujutsu-kaisen",
+  "majin-buu-dragon-ball", "maki-jujutsu-kaisen", "makima-chainsaw-man",
+  "mavis-fairy-tail", "megumi-jujutsu-kaisen", "meliodas-seven-deadly-sins",
+  "mereoleona-black-clover", "merlin-seven-deadly-sins", "meruem-hunter-x-hunter",
+  "metal-bat-one-punch-man", "might-guy-naruto", "mihawk-one-piece",
+  "mikasa-attack-on-titan", "minato-naruto", "mirko-my-hero-academia",
+  "muzan-demon-slayer", "nanami-jujutsu-kaisen", "naruto-naruto",
+  "natsu-fairy-tail", "neferpitou-hunter-x-hunter", "netero-hunter-x-hunter",
+  "nobara-jujutsu-kaisen", "noelle-black-clover", "nozel-black-clover",
+  "obito-naruto", "olivier-fullmetal-alchemist", "overhaul-my-hero-academia",
+  "pain-naruto", "piccolo-dragon-ball", "power-chainsaw-man",
+  "reiner-titan-attack-on-titan", "rengoku-demon-slayer", "reze-chainsaw-man",
+  "roy-mustang-fullmetal-alchemist", "saitama-one-punch-man", "sanji-one-piece",
+  "scar-fullmetal-alchemist", "shanks-one-piece", "shigaraki-my-hero-academia",
+  "shinobu-demon-slayer", "sukuna-jujutsu-kaisen", "tanjiro-demon-slayer",
+  "tatsumaki-one-punch-man", "tengen-demon-slayer", "todo-jujutsu-kaisen",
+  "todoroki-my-hero-academia", "toshiro-bleach", "touka-tokyo-ghoul",
+  "trunks-dragon-ball", "tsunade-naruto", "ulquiorra-bleach",
+  "vegeta-dragon-ball", "yami-black-clover", "yhwach-bleach",
+  "yoruichi-bleach", "yuji-itadori-jujutsu-kaisen", "yuno-black-clover",
+  "yuta-jujutsu-kaisen", "zagred-black-clover", "zeke-attack-on-titan",
+  "zeldris-seven-deadly-sins", "zenitsu-demon-slayer", "zeref-fairy-tail",
+  "zoro-one-piece"
+];
+
+// Guard: catches the mistake above at dev time instead of in users' links.
+if (typeof console !== "undefined") {
+  const unregistered = CHARACTERS.filter((c) => !CODEC_IDS.includes(c.id)).map((c) => c.id);
+  if (unregistered.length) {
+    console.error(
+      "[animeVS codec] These characters are missing from CODEC_IDS and cannot be encoded.\n" +
+      "APPEND them to the END of the list (never insert):\n  " + unregistered.join("\n  ")
+    );
+  }
+  if (CODEC_IDS.length > 256) {
+    console.error("[animeVS codec] CODEC_IDS has " + CODEC_IDS.length + " entries; the 8-bit index only addresses 256.");
+  }
+}
 function _b64url(bytes){ let bin=String.fromCharCode(...bytes); let s=btoa(bin); return s.replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,""); }
 function _unb64url(str){ str=str.replace(/-/g,"+").replace(/_/g,"/"); while(str.length%4)str+="="; const bin=atob(str); return [...bin].map((c)=>c.charCodeAt(0)); }
 function _checksum(str){ let h=0; for(const ch of str) h=(h*31+ch.charCodeAt(0))%36; return h.toString(36).toUpperCase(); }
@@ -452,7 +671,8 @@ function encodeTeam(team){ // team: [{character, roleId}] — 11 bits/slot (8 ch
   if (ordered.some((m) => !m)) return null;
   let bits = [];
   for (const m of ordered){
-    const ci = SORTED_IDS.indexOf(m.character.id), ri = CODEC_ROLES.indexOf(m.roleId);
+    const ci = CODEC_IDS.indexOf(m.character.id), ri = CODEC_ROLES.indexOf(m.roleId);
+    if (ci < 0) return null; // not in the frozen table — encoding would produce a wrong code
     for (let b=7;b>=0;b--) bits.push((ci>>b)&1);
     for (let b=2;b>=0;b--) bits.push((ri>>b)&1);
   }
@@ -472,7 +692,7 @@ function decodeTeam(code){
     for(let s=0;s<SLOT_COUNT;s++){
       let ci=0; for(let b=0;b<8;b++) ci=(ci<<1)|bits[s*11+b];
       let ri=0; for(let b=0;b<3;b++) ri=(ri<<1)|bits[s*11+8+b];
-      const id=SORTED_IDS[ci]; const character=byId(id);
+      const id=CODEC_IDS[ci]; const character=byId(id);
       if(!character) return { error:"Code references an unknown fighter" };
       team.push({ character, roleId: CODEC_ROLES[ri] });
     }
@@ -489,7 +709,8 @@ function encodeResult(team, reached){
   if (ordered.some((m) => !m)) return null;
   let bits = [];
   for (const m of ordered){
-    const ci = SORTED_IDS.indexOf(m.character.id), ri = CODEC_ROLES.indexOf(m.roleId);
+    const ci = CODEC_IDS.indexOf(m.character.id), ri = CODEC_ROLES.indexOf(m.roleId);
+    if (ci < 0) return null; // not in the frozen table — encoding would produce a wrong code
     for (let b=7;b>=0;b--) bits.push((ci>>b)&1);
     for (let b=2;b>=0;b--) bits.push((ri>>b)&1);
   }
@@ -510,7 +731,7 @@ function decodeResult(code){
     for(let s=0;s<SLOT_COUNT;s++){
       let ci=0; for(let b=0;b<8;b++) ci=(ci<<1)|bits[s*11+b];
       let ri=0; for(let b=0;b<3;b++) ri=(ri<<1)|bits[s*11+8+b];
-      const id=SORTED_IDS[ci]; const character=byId(id);
+      const id=CODEC_IDS[ci]; const character=byId(id);
       if(!character) return { error:"Code references an unknown fighter" };
       team.push({ character, roleId: CODEC_ROLES[ri] });
     }
@@ -692,6 +913,7 @@ function SystemGuideModal({ onClose }) {
     { id:"roles",    label:"Role Fit" },
     { id:"signature",label:"Signature" },
     { id:"counters", label:"Counters" },
+    { id:"synergy",  label:"Synergy" },
     { id:"tiers",    label:"Tier Caps" },
   ];
 
@@ -706,7 +928,7 @@ function SystemGuideModal({ onClose }) {
           <button onClick={onClose} className="c" style={{ background:"transparent", border:"none", color:"#78716c", fontSize:22, cursor:"pointer", padding:4, lineHeight:1 }}>✕</button>
         </div>
         <p className="c" style={{ fontSize:13, color:"#a8a29e", marginTop:6, marginBottom:16, lineHeight:1.5 }}>
-          Every fighter's final score in a battle comes from four layers stacked together. Flip through each tab below.
+          Every fighter's final score in a battle comes from five layers stacked together. Flip through each tab below.
         </p>
 
         <div style={{ display:"flex", gap:6, marginBottom:18, flexWrap:"wrap" }}>
@@ -723,6 +945,7 @@ function SystemGuideModal({ onClose }) {
         {tab === "roles" && <GuideRoles />}
         {tab === "signature" && <GuideSignature />}
         {tab === "counters" && <GuideCounters />}
+        {tab === "synergy" && <GuideSynergy />}
         {tab === "tiers" && <GuideTiers />}
       </div>
     </div>
@@ -818,6 +1041,70 @@ function GuideCounters() {
             <div key={c.win+c.lose} style={{ display:"flex", alignItems:"center", gap:8, padding:"7px 10px", borderRadius:8, background:"rgba(255,255,255,0.03)" }}>
               <Tag t={c.win} small /><span className="c" style={{ color:"#4ade80", fontWeight:700, fontSize:13 }}>beats</span><Tag t={c.lose} small />
               <span className="c" style={{ marginLeft:"auto", fontSize:10, color: c.tier==="strong"?"#fbbf24":c.tier==="core"?"#93c5fd":"#a8a29e", textTransform:"uppercase", letterSpacing:"0.08em" }}>{COUNTER_TIERS[c.tier]?.label || "Core"}</span>
+            </div>
+          ))}
+        </div>
+      </GuideSection>
+    </div>
+  );
+}
+
+function GuideSynergy() {
+  const AMBER = "#fbbf24";
+  const KINDS = [
+    { id:"family", label:"Family" },
+    { id:"mentor", label:"Mentor & Student" },
+    { id:"rival",  label:"Rivals" },
+    { id:"bond",   label:"Partners & Crews" },
+  ];
+  const bySeries = {};
+  for (const [a, b, label, kind] of DUOS) {
+    const c = byId(a);
+    if (!c) continue;
+    (bySeries[c.series] = bySeries[c.series] || []).push({ a, b, label, kind });
+  }
+  const series = Object.keys(bySeries).sort();
+  return (
+    <div>
+      <GuideSection title="How synergy works">
+        <p className="c" style={{ fontSize:13, color:"#d6d3d1", lineHeight:1.6, marginBottom:10 }}>
+          Some fighters have history. Put both halves of a canon pairing on your squad — a parent and child, a master and student, sworn rivals, lifelong partners — and the squad earns a flat <b style={{ color:AMBER }}>+{DUO_BONUS}</b>. Role placement doesn't matter; they just both have to be on the team.
+        </p>
+        <p className="c" style={{ fontSize:13, color:"#a8a29e", lineHeight:1.6, marginBottom:10 }}>
+          Every matching pair pays out separately, so a trio like the Shiganshina Trio or the Chainsaw Man flatshare counts as three pairs and stacks to <b style={{ color:AMBER }}>+{DUO_BONUS * 3}</b>. There are <b>{DUOS.length}</b> pairings in the game across <b>{series.length}</b> series.
+        </p>
+        <p className="c" style={{ fontSize:13, color:"#a8a29e", lineHeight:1.6 }}>
+          On the <b>ladder</b>, synergy is yours alone — the enemy squads are canon teams and would otherwise run away with it. In <b>Versus</b>, both players get it, because both players drafted for it.
+        </p>
+      </GuideSection>
+
+      <GuideSection title="Kinds of pairing">
+        <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+          {KINDS.map((k) => (
+            <span key={k.id} className="c" style={{ fontSize:11, fontWeight:700, padding:"4px 10px", borderRadius:999,
+              background:"rgba(251,191,36,0.12)", color:AMBER, border:"1px solid rgba(251,191,36,0.28)" }}>
+              {k.label} · {DUOS.filter((d) => d[3] === k.id).length}
+            </span>
+          ))}
+        </div>
+      </GuideSection>
+
+      <GuideSection title="Every pairing">
+        <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+          {series.map((s) => (
+            <div key={s}>
+              <div className="c" style={{ fontSize:10, textTransform:"uppercase", letterSpacing:"0.12em", color:"#78716c", marginBottom:5 }}>{s}</div>
+              <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+                {bySeries[s].map((d, i) => (
+                  <div key={i} style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 10px", borderRadius:8, background:"rgba(255,255,255,0.03)" }}>
+                    <span className="c" style={{ fontSize:13, color:"#f5f5f4", fontWeight:700 }}>
+                      {byId(d.a).name} <span style={{ color:"#57534e" }}>+</span> {byId(d.b).name}
+                    </span>
+                    <span className="c" style={{ fontSize:11, color:"#a8a29e" }}>{d.label}</span>
+                    <span className="a" style={{ marginLeft:"auto", fontSize:13, color:AMBER }}>+{DUO_BONUS}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           ))}
         </div>
@@ -1301,6 +1588,9 @@ function BattleSequence({ team, run, onDone }) {
             {cur.me.edges.length > 0 && (
               <div className="c" style={{ fontSize:12, color:"#6ee7b7", marginTop:10 }}>+{cur.me.bonus} {cur.me.edges.join(", ")}</div>
             )}
+            {cur.me.duos && cur.me.duos.length > 0 && (
+              <div className="c" style={{ fontSize:12, color:"#fbbf24", marginTop:4 }}>+{cur.me.duoBonus} synergy · {cur.me.duos.join(", ")}</div>
+            )}
           </div>
         )}
       </div>
@@ -1496,6 +1786,7 @@ function ClimbResult({ team, onReplay, replayLabel }) {
                   <div className="c" style={{ fontSize:10, textTransform:"uppercase", letterSpacing:"0.15em", color:"#a8a29e" }}>You</div>
                   <div className="a" style={{ fontSize:24, color:"#f5f5f4" }}>{r.me.total.toFixed(0)}</div>
                   {r.me.edges.length>0 && <div style={{ fontSize:10, color:"#6ee7b7", lineHeight:1.3 }}>+{r.me.bonus} {r.me.edges.join(", ")}</div>}
+                  {r.me.duos && r.me.duos.length>0 && <div style={{ fontSize:10, color:"#fbbf24", lineHeight:1.3 }}>+{r.me.duoBonus} {r.me.duos.join(", ")}</div>}
                 </div>
                 <div className="a" style={{ color:"#57534e" }}>VS</div>
                 <div style={{ textAlign:"right" }}>
@@ -1516,6 +1807,56 @@ function ClimbResult({ team, onReplay, replayLabel }) {
 // ─── SHARED SPIN STAGE ───────────────────────────────────────────────────────
 // Reusable spinner + role-field. Both modes render this; they differ only in
 // what `renderReel` shows (1 char vs 5 options) and how a character is chosen.
+// Live synergy readout on the build board. Shows duos already locked in, and —
+// crucially for Spin, where only ~5% of squads stumble into a pair by luck —
+// flags when the fighter currently in hand would complete one.
+function SynergyStrip({ team, activeChar }) {
+  const placed = ROLES.map((r) => team[r.id]).filter(Boolean);
+  const active = activeDuos(placed);
+  const potential = potentialDuos(activeChar, placed);
+  if (active.length === 0 && potential.length === 0) return null;
+  const AMBER = "#fbbf24";
+  return (
+    <div style={{ marginTop:14, padding:"10px 12px", borderRadius:12,
+      border:`1px solid ${active.length ? "rgba(251,191,36,0.35)" : "rgba(255,255,255,0.12)"}`,
+      background: active.length ? "rgba(251,191,36,0.07)" : "rgba(255,255,255,0.03)" }}>
+      <div style={{ display:"flex", alignItems:"baseline", justifyContent:"space-between", gap:8 }}>
+        <span className="c" style={{ fontSize:11, textTransform:"uppercase", letterSpacing:"0.15em", color: active.length ? AMBER : "#78716c", fontWeight:700 }}>
+          Squad Synergy
+        </span>
+        {active.length > 0 && (
+          <span className="a" style={{ fontSize:16, color:AMBER }}>+{active.length * DUO_BONUS}</span>
+        )}
+      </div>
+
+      {active.length > 0 && (
+        <div style={{ display:"flex", flexWrap:"wrap", gap:5, marginTop:8 }}>
+          {active.map((d, i) => (
+            <span key={i} className="c" style={{ fontSize:11, fontWeight:700, padding:"3px 8px", borderRadius:999,
+              background:"rgba(251,191,36,0.16)", color:AMBER, border:"1px solid rgba(251,191,36,0.3)" }}>
+              {byId(d.a).name} + {byId(d.b).name} · {d.label} +{d.bonus}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {potential.length > 0 && (
+        <div style={{ marginTop: active.length ? 8 : 6 }}>
+          {potential.map((p, i) => (
+            <div key={i} className="c" style={{ fontSize:11, color:"#d6d3d1", lineHeight:1.5 }}>
+              Slot <b style={{ color:"#f5f5f4" }}>{activeChar.name}</b> to pair with{" "}
+              <b style={{ color:"#f5f5f4" }}>{p.partner.name}</b> — {p.label}{" "}
+              <span style={{ color:AMBER, fontWeight:700 }}>+{DUO_BONUS}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {active.length === 0 && potential.length === 0 && null}
+    </div>
+  );
+}
+
 function SpinStage({
   title, subtitle, team, activeChar, onPlace, allFilled, onClimb,
   reelArea, belowReel, filledCount, footNote, onHelp, lockedIn=false,
@@ -1556,6 +1897,7 @@ function SpinStage({
             })}
           </div>
 
+          <SynergyStrip team={team} activeChar={activeChar} />
 
           {allFilled ? (
             <button onClick={onClimb} disabled={lockedIn} className="a redBtn"
@@ -2440,6 +2782,9 @@ function TeamColumn({ label, team, score, side, win }) {
       </div>
       {score.edges.length > 0 && (
         <div className="c" style={{ fontSize:10, color:"#6ee7b7", marginTop:8, lineHeight:1.3 }}>+{score.bonus} {score.edgeDetails.map((e) => `${e.label} (+${e.bonus})`).join(", ")}</div>
+      )}
+      {score.duoDetails && score.duoDetails.length > 0 && (
+        <div className="c" style={{ fontSize:10, color:"#fbbf24", marginTop:4, lineHeight:1.3 }}>+{score.duoBonus} {score.duoDetails.map((d) => `${d.label} (+${d.bonus})`).join(", ")}</div>
       )}
     </div>
   );
