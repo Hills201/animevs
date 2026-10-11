@@ -3461,7 +3461,7 @@ function AuctionMode({ onExit }) {
                 </button>
               ))}
             </div>
-            <button data-act="fold" onClick={fold} className="c" style={{ marginTop: 8, width: "100%", padding: 11, borderRadius: 10, background: "transparent", border: "1px solid rgba(255,255,255,0.18)", color: "#a8a29e", cursor: "pointer", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", fontSize: 13 }}>
+            <button data-act="fold" onClick={fold} className="c" style={{ marginTop: 8, width: "100%", padding: 13, borderRadius: 10, background: "rgba(239,68,68,0.18)", border: "2px solid #ef4444", color: "#fecaca", cursor: "pointer", fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", fontSize: 14, boxShadow: "0 0 0 3px rgba(239,68,68,0.10)" }}>
               {theyLead ? `Let go · rival wins at $${s.hi}` : s.folded === me ? "Passed" : "Pass on this fighter"}
             </button>
             <div className="c" style={{ marginTop: 6, fontSize: 11, color: "#78716c", textAlign: "center" }}>
