@@ -790,6 +790,149 @@ function drawFrom(pool, size, seed) {
   return arr.slice(0, size);
 }
 
+// ─── AUCTION (live PvP) ─────────────────────────────────────────────────────
+// A live ascending auction. One fighter at a time comes up for sale, both
+// players bid against a clock, the winner pays what they bid and gets the
+// fighter. First to fill all 7 slots wins the right to stop bidding.
+//
+// Everything below is PURE: state in, new state (or null if illegal) out. The
+// room row in Supabase holds exactly one of these state objects, and every
+// write is a compare-and-set on the row version, so two clients racing each
+// other always resolve to one agreed outcome. Keeping it pure also means
+// healthcheck.mjs can play whole auctions without a browser or a database.
+const AUCTION_BUDGET = 50;      // same scale as Draft credits: a fighter's cost is a fair price
+const AUCTION_MIN_BID = 1;
+const AUCTION_SPIN_MS = 1800;   // reel runs, then bidding opens
+const AUCTION_OPEN_MS = 12000;  // clock to open the bidding on a fresh lot
+const AUCTION_RESET_MS = 7000;  // clock after every bid
+const AUCTION_SOLD_MS = 4200;   // pause so both players can read the result
+const AUCTION_MAX_DRY = 4;      // unsold lots in a row before empty slots are auto-filled
+const auctionOther = (who) => (who === "a" ? "b" : "a");
+
+let _auctionOrderCache = { seed: null, order: null };
+function auctionOrder(seed) {
+  if (_auctionOrderCache.seed === seed) return _auctionOrderCache.order;
+  // Sorted first so the shuffle never depends on how the roster array is ordered.
+  const ids = CHARACTERS.map((c) => c.id).sort();
+  const order = drawFrom(ids, ids.length, seed);
+  _auctionOrderCache = { seed, order };
+  return order;
+}
+function auctionLot(s) { return byId(auctionOrder(s.seed)[s.lot]); }
+
+function auctionNew(seed) {
+  const side = () => ({ money: AUCTION_BUDGET, won: [] });
+  return { seed, phase: "lobby", joined: { a: true, b: false }, lot: 0, seq: 0,
+           hi: 0, hiBy: null, folded: null, a: side(), b: side(), dry: 0, last: null,
+           teams: { a: null, b: null } };
+}
+
+// The most this player may bid right now. $1 stays reserved for every slot they
+// still have to fill AFTER this one, so nobody can spend themselves into a team
+// they can no longer complete (same idea as Draft's reserve rule).
+function auctionMaxBid(s, who) {
+  const owned = s[who].won.length;
+  if (owned >= PICKS) return 0;
+  return s[who].money - (PICKS - owned - 1) * AUCTION_MIN_BID;
+}
+function auctionClockMs(s) {
+  if (s.phase === "spin") return AUCTION_SPIN_MS;
+  if (s.phase === "bid") return s.hiBy ? AUCTION_RESET_MS : AUCTION_OPEN_MS;
+  if (s.phase === "sold") return AUCTION_SOLD_MS;
+  return null;
+}
+function auctionKey(s) { return `${s.phase}:${s.lot}:${s.seq}`; }
+
+function auctionJoin(s) {
+  if (s.phase !== "lobby" || s.joined.b) return null;
+  return { ...s, joined: { ...s.joined, b: true } };
+}
+function auctionStart(s) {
+  if (s.phase !== "lobby" || !s.joined.b) return null;
+  return { ...s, phase: "spin", lot: 0, seq: s.seq + 1 };
+}
+function auctionOpen(s) {
+  if (s.phase !== "spin") return null;
+  return { ...s, phase: "bid", seq: s.seq + 1 };
+}
+
+function auctionSell(s) {
+  const who = s.hiBy;
+  const lotId = auctionOrder(s.seed)[s.lot];
+  return { ...s, phase: "sold", seq: s.seq + 1, dry: 0,
+    [who]: { money: s[who].money - s.hi, won: [...s[who].won, { id: lotId, price: s.hi }] },
+    last: { lot: s.lot, id: lotId, by: who, price: s.hi } };
+}
+function auctionUnsold(s) {
+  const lotId = auctionOrder(s.seed)[s.lot];
+  return { ...s, phase: "sold", seq: s.seq + 1, dry: s.dry + 1,
+    last: { lot: s.lot, id: lotId, by: null, price: 0 } };
+}
+
+function auctionBid(s, who, amount) {
+  if (s.phase !== "bid") return null;
+  amount = Math.floor(amount);
+  if (!Number.isFinite(amount) || amount < AUCTION_MIN_BID) return null;
+  if (s.hiBy === who) return null;                 // already leading
+  if (amount < s.hi + AUCTION_MIN_BID) return null; // must beat the current bid
+  if (amount > auctionMaxBid(s, who)) return null;
+  const n = { ...s, hi: amount, hiBy: who, folded: null, seq: s.seq + 1 };
+  // If the rival can't raise (full, or out of spendable money) the lot is sold now.
+  if (auctionMaxBid(n, auctionOther(who)) < amount + AUCTION_MIN_BID) return auctionSell(n);
+  return n;
+}
+// Folding. Against a standing bid: concede, the leader wins at that price.
+// With no bid yet: a pass; once both have passed (or the rival can't bid) it's unsold.
+function auctionFold(s, who) {
+  if (s.phase !== "bid" || s.hiBy === who) return null;
+  if (s.hiBy) return auctionSell(s);
+  const rival = auctionOther(who);
+  if (s.folded === rival || auctionMaxBid(s, rival) < AUCTION_MIN_BID) return auctionUnsold(s);
+  return { ...s, folded: who };
+}
+function auctionExpire(s) {
+  if (s.phase !== "bid") return null;
+  return s.hiBy ? auctionSell(s) : auctionUnsold(s);
+}
+
+// Anyone still short when the auction ends is topped up with the cheapest
+// unclaimed fighters, alternating between players so neither gets first dibs.
+function auctionAutofill(s) {
+  const order = auctionOrder(s.seed);
+  const owned = new Set([...s.a.won, ...s.b.won].map((w) => w.id));
+  const seen = order.slice(0, s.lot + 1).filter((id) => !owned.has(id));
+  const unseen = order.slice(s.lot + 1).filter((id) => !owned.has(id));
+  const pool = [...seen.sort((x, y) => byId(x).cost - byId(y).cost || (x < y ? -1 : 1)), ...unseen];
+  const n = { ...s, a: { ...s.a, won: [...s.a.won] }, b: { ...s.b, won: [...s.b.won] } };
+  let i = 0;
+  while ((n.a.won.length < PICKS || n.b.won.length < PICKS) && i < pool.length) {
+    for (const who of ["a", "b"]) {
+      if (n[who].won.length < PICKS && i < pool.length) n[who].won.push({ id: pool[i++], price: 0, auto: true });
+    }
+  }
+  return n;
+}
+function auctionNext(s) {
+  if (s.phase !== "sold") return null;
+  const full = s.a.won.length >= PICKS && s.b.won.length >= PICKS;
+  const exhausted = s.lot + 1 >= auctionOrder(s.seed).length;
+  if (full) return { ...s, phase: "lock", seq: s.seq + 1 };
+  if (s.dry >= AUCTION_MAX_DRY || exhausted) return { ...auctionAutofill(s), phase: "lock", seq: s.seq + 1 };
+  return { ...s, phase: "spin", lot: s.lot + 1, hi: 0, hiBy: null, folded: null, seq: s.seq + 1 };
+}
+// A locked team is only accepted if it is exactly the 7 fighters that player holds.
+function auctionTeamValid(s, who, team) {
+  const mine = new Set(s[who].won.map((w) => w.id));
+  const ids = team.map((m) => m.character.id);
+  return team.length === PICKS && new Set(ids).size === PICKS && ids.every((id) => mine.has(id))
+    && new Set(team.map((m) => m.roleId)).size === PICKS;
+}
+function auctionLock(s, who, code) {
+  if (s.phase !== "lock" || s.teams[who]) return null;
+  const teams = { ...s.teams, [who]: code };
+  return { ...s, teams, phase: teams.a && teams.b ? "done" : "lock", seq: s.seq + 1 };
+}
+
 const INK = "#0b0c10";
 const RED = "#ff2d35";
 const TIER_COLOR = { SS:"#ff4d6d", S:"#fbbf24", A:"#f0abfc", B:"#7dd3fc", C:"#a8a29e" };
@@ -833,7 +976,7 @@ export default function App() {
           {mode === null && <Home setMode={setMode} />}
           {mode === "draft" && <DraftMode />}
           {mode === "spin" && <SpinMode />}
-          {mode === "pvp" && <PvpMode />}
+          {mode === "pvp" && <VersusMode />}
           {mode === "daily" && <DailyGame characters={CHARACTERS} />}
           {mode === "result" && <SharedResultView setMode={setMode} />}
         </div>
@@ -870,6 +1013,17 @@ const HOW_TO_PLAY = {
       { h:"Pick from 5 options", b:"Each spin draws 5 fighters. Choose one that fits your budget and roles, or reroll (2 allowed)." },
       { h:"Never get stuck", b:"The game always keeps enough budget in reserve so you can finish your team — no dead ends." },
       { h:"The harder challenge", b:"Draft's tighter budget makes the ladder tougher than Spin — a full clear here is a real achievement." },
+    ],
+  },
+  auction: {
+    title: "AUCTION",
+    accent: "#f59e0b",
+    steps: [
+      { h:"One fighter at a time", b:"A reel spins and a fighter goes up for sale. You and your rival each start with $50 to fill all 7 roles." },
+      { h:"Bid against the clock", b:"Raise the price or pass. Every bid resets a short clock, and when it runs out the top bidder pays what they bid and takes the fighter." },
+      { h:"Winner takes them off the table", b:"A fighter you win can never be your rival's. Let one go and they may take him for less than you would have paid." },
+      { h:"Place them straight away", b:"Each fighter you win must go into a role before you can bid again, so think about role fit while you bid. $1 is always held back per empty slot, so you can never be stranded short of a full team." },
+      { h:"Lock in and reveal", b:"Once both squads are full, lock in. The two teams are scored head to head; unspent money is worth nothing." },
     ],
   },
   pvp: {
@@ -1424,7 +1578,7 @@ function Home({ setMode }) {
   const cards = [
     { id:"spin", title:"SPIN", tagline:"Spin the reel. Take it or risk another. Slot fighters into seven roles.", accent:RED },
     { id:"draft", title:"DRAFT", tagline:"Five draws, one budget. Build the sharpest squad you can afford.", accent:"#3b82f6" },
-    { id:"pvp", title:"VERSUS", tagline:"Create or join a live room. Build blind, then reveal.", accent:"#a855f7" },
+    { id:"pvp", title:"VERSUS", tagline:"Live two-player rooms. Build blind, or bid against your rival in an auction.", accent:"#a855f7" },
     { id:"daily", title:"DAILY", tagline:"One mystery character, seven guesses. Same puzzle for everyone, every day.", accent:"#fbbf24" },
   ];
   return (
@@ -2789,6 +2943,567 @@ function PvpMode() {
           New match
         </button>
       </div>
+    </div>
+  );
+}
+
+// ─── VERSUS: pick a format ───────────────────────────────────────────────────
+// Both formats are live two-player rooms. "Blind" is the original spin-and-hide
+// build. "Auction" is the bidding draft below. A shared ?room=CODE link carries
+// &m=auction for auction rooms so it opens in the right place.
+function VersusMode() {
+  const [variant, setVariant] = useState(() => {
+    try {
+      const p = new URLSearchParams(window.location.search);
+      if (p.get("room")) return p.get("m") === "auction" ? "auction" : "blind";
+    } catch (e) {}
+    return null;
+  });
+  if (variant === "blind") return <PvpMode />;
+  if (variant === "auction") return <AuctionMode onExit={() => setVariant(null)} />;
+  const cards = [
+    { id:"auction", title:"AUCTION", accent:"#f59e0b", tag:"NEW",
+      tagline:`Fighters come up one at a time. Bid against your rival with $${AUCTION_BUDGET}. Every fighter you win is gone from their reach.` },
+    { id:"blind", title:"BLIND DRAFT", accent:"#a855f7", tag:"",
+      tagline:"Spin and build your seven in secret. Both teams are revealed together once you both lock in." },
+  ];
+  return (
+    <div className="tIn" style={{ maxWidth:640, margin:"0 auto" }}>
+      <div className="a" style={{ fontSize:28, color:"#f5f5f4", marginBottom:6 }}>VERSUS</div>
+      <p className="c" style={{ fontSize:15, color:"#a8a29e", marginBottom:20 }}>Two players, one live room. Choose how you want to build.</p>
+      <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
+        {cards.map((c) => (
+          <button key={c.id} onClick={() => setVariant(c.id)} className="hov"
+            style={{ textAlign:"left", padding:22, borderRadius:16, cursor:"pointer", color:"#e7e5e4",
+              border:`1px solid ${c.accent}55`, background:`linear-gradient(160deg, ${c.accent}22, rgba(255,255,255,0.02) 60%)` }}>
+            <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:8 }}>
+              <div className="a" style={{ fontSize:28, color:"#f5f5f4", lineHeight:1 }}>{c.title}</div>
+              {c.tag && <span className="c" style={{ fontSize:11, fontWeight:700, letterSpacing:"0.12em", padding:"2px 8px", borderRadius:999, background:c.accent, color:"#0b0c10" }}>{c.tag}</span>}
+            </div>
+            <p className="c" style={{ fontSize:15, color:"#a8a29e", margin:0, lineHeight:1.4 }}>{c.tagline}</p>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── AUCTION MODE ────────────────────────────────────────────────────────────
+// Room state lives in ONE jsonb row (auction_rooms.state) shaped by the pure
+// auction* functions in the logic section. Every write is a compare-and-set on
+// the row's `version`, so when both clients act at once exactly one write wins
+// and the loser re-reads and tries again (or finds it's too late). Clocks are
+// local: each client starts its own countdown when it first sees a state, and
+// whichever client's clock runs out first asks the database to advance. Because
+// the advance is keyed on the exact state it saw, a stale attempt is a no-op.
+const AUCTION_GOLD = "#f59e0b";
+
+function auctionBidOptions(s, who) {
+  const min = s.hi + AUCTION_MIN_BID, max = auctionMaxBid(s, who);
+  if (max < min) return [];
+  const vals = [...new Set([min, s.hi + 3, s.hi + 5, s.hi + 10].filter((v) => v <= max))].sort((x, y) => x - y);
+  if (max > min && !vals.includes(max)) vals.push(max);
+  return vals.length > 4 ? [...vals.slice(0, 3), max] : vals;
+}
+
+function AuctionMode({ onExit }) {
+  const [code, setCode] = useState("");
+  const [me, setMe] = useState(null);            // "a" (host) | "b"
+  const [row, setRow] = useState(null);          // { code, state, version, created_at }
+  const [err, setErr] = useState("");
+  const [note, setNote] = useState("");
+  const [online, setOnline] = useState(null);
+  const [placed, setPlaced] = useState({});      // roleId -> character id (private until lock)
+  const [, setTick] = useState(0);
+  const [reelDone, setReelDone] = useState("");
+  const [copied, setCopied] = useState(false);
+  const [seenHelp, markSeenHelp] = useSeenModal("animevs_seen_help_auction");
+  const [helpOpen, setHelpOpen] = useState(!seenHelp);
+  const rowRef = React.useRef(null);
+  const clockRef = React.useRef({ key: "", deadline: 0, total: 0 });
+  const noteTimer = React.useRef(null);
+  const { spinning, reelFace, settleKey, run } = useReel(7);
+
+  const s = row ? row.state : null;
+  const other = me ? auctionOther(me) : null;
+  const key = s ? auctionKey(s) : "";
+
+  function flash(msg) {
+    setNote(msg);
+    clearTimeout(noteTimer.current);
+    noteTimer.current = setTimeout(() => setNote(""), 2200);
+  }
+
+  // ── entering / leaving a room ──
+  function enter(c, role, data) {
+    rowRef.current = data;
+    setRow(data); setCode(c); setMe(role); setErr("");
+    let saved = {};
+    try { saved = JSON.parse(sessionStorage.getItem(`animevs:auction-team:${c}:${role}`)) || {}; } catch (e) {}
+    setPlaced(saved);
+    try { sessionStorage.setItem(`animevs:auction-role:${c}`, role); } catch (e) {}
+    try { window.history.replaceState({}, "", `?room=${c}&m=auction`); } catch (e) {}
+  }
+  function leave() {
+    try { if (code) { sessionStorage.removeItem(`animevs:auction-role:${code}`); sessionStorage.removeItem(`animevs:auction-team:${code}:${me}`); } } catch (e) {}
+    try { window.history.replaceState({}, "", window.location.pathname); } catch (e) {}
+    rowRef.current = null;
+    setRow(null); setCode(""); setMe(null); setPlaced({}); setErr(""); setOnline(null);
+  }
+  async function createRoom() {
+    if (!supabaseConfigured) { setErr("Supabase is not configured in this deployment."); return; }
+    const c = genRoomCode();
+    const { data, error } = await supabase.from("auction_rooms").insert({ code: c, state: auctionNew((Math.random() * 1e9) | 0), version: 0 }).select().single();
+    if (error) { setErr(error.message.includes("auction_rooms") ? "The auction table hasn't been created yet — run the SQL in supabase-auction.sql." : error.message); return; }
+    enter(c, "a", data);
+  }
+  async function joinRoom(raw, attempt = 0) {
+    if (!supabaseConfigured) { setErr("Supabase is not configured in this deployment."); return; }
+    const c = String(raw || "").trim().toUpperCase();
+    if (!c) return;
+    const { data, error } = await supabase.from("auction_rooms").select("*").eq("code", c).single();
+    if (error || !data) { setErr("Auction room not found — check the code."); return; }
+    const made = data.created_at ? new Date(data.created_at).getTime() : 0;
+    if (made && Date.now() - made > ROOM_MAX_AGE_MS) { setErr("That room has expired. Create a new one."); return; }
+    let saved = null;
+    try { saved = sessionStorage.getItem(`animevs:auction-role:${c}`); } catch (e) {}
+    if (saved === "a" || saved === "b") { enter(c, saved, data); return; } // reload / reconnect
+    const next = auctionJoin(data.state);
+    if (!next) { setErr("That room already has two players."); return; }
+    const { data: upd, error: e2 } = await supabase.from("auction_rooms").update({ state: next, version: data.version + 1 }).eq("code", c).eq("version", data.version).select();
+    if (e2) { setErr(e2.message); return; }
+    if (!upd || !upd.length) { if (attempt < 3) return joinRoom(raw, attempt + 1); setErr("Couldn't take the seat — try again."); return; }
+    enter(c, "b", upd[0]);
+  }
+  React.useEffect(() => {
+    try {
+      const p = new URLSearchParams(window.location.search);
+      if (p.get("room") && p.get("m") === "auction") joinRoom(p.get("room"));
+    } catch (e) {}
+  }, []);
+
+  // ── live sync: realtime push + a slow poll as a safety net ──
+  React.useEffect(() => {
+    if (!code || !me || !supabaseConfigured) return undefined;
+    let alive = true;
+    const apply = (r) => {
+      if (!alive || !r || !r.state) return;
+      const cur = rowRef.current;
+      if (!cur || r.version >= cur.version) { rowRef.current = r; setRow(r); }
+    };
+    const channel = supabase.channel(`auction:${code}`, { config: { presence: { key: me } } })
+      .on("postgres_changes", { event: "*", schema: "public", table: "auction_rooms", filter: `code=eq.${code}` }, (p) => apply(p.new))
+      .on("presence", { event: "sync" }, () => setOnline(Object.keys(channel.presenceState()).some((k) => k !== me)))
+      .subscribe(async (status) => { if (status === "SUBSCRIBED") await channel.track({ role: me, at: Date.now() }); });
+    const poll = setInterval(async () => {
+      const { data } = await supabase.from("auction_rooms").select("*").eq("code", code).single();
+      apply(data);
+    }, 2500);
+    return () => { alive = false; clearInterval(poll); supabase.removeChannel(channel); };
+  }, [code, me]);
+
+  // ── compare-and-set write. fn(freshState) -> nextState | null ──
+  async function commit(fn) {
+    for (let i = 0; i < 5; i++) {
+      const cur = rowRef.current;
+      if (!cur) return false;
+      const next = fn(cur.state);
+      if (!next) return false;
+      const { data, error } = await supabase.from("auction_rooms").update({ state: next, version: cur.version + 1 }).eq("code", cur.code).eq("version", cur.version).select();
+      if (error) { setErr(error.message); return false; }
+      if (data && data.length) { rowRef.current = data[0]; setRow(data[0]); return true; }
+      const { data: fresh } = await supabase.from("auction_rooms").select("*").eq("code", cur.code).single();
+      if (fresh && fresh.version > cur.version) { rowRef.current = fresh; setRow(fresh); }
+    }
+    return false;
+  }
+
+  // ── clocks ──
+  if (s && clockRef.current.key !== key) {
+    const ms = auctionClockMs(s);
+    clockRef.current = { key, total: ms || 0, deadline: ms ? Date.now() + ms : 0 };
+  }
+  const clock = clockRef.current;
+  const remaining = s && clock.deadline ? Math.max(0, clock.deadline - Date.now()) : 0;
+  const timed = !!s && ["spin", "bid", "sold"].includes(s.phase);
+  React.useEffect(() => {
+    if (!timed) return undefined;
+    const iv = setInterval(() => setTick((t) => t + 1), 100);
+    return () => clearInterval(iv);
+  }, [timed]);
+  // Whoever's clock expires first asks for the advance. The host goes first, the
+  // guest a beat later, and a late retry covers a player who has gone offline.
+  React.useEffect(() => {
+    if (!timed || !me || !clock.deadline) return undefined;
+    const k = key;
+    const go = () => commit((f) => {
+      if (auctionKey(f) !== k) return null;
+      return f.phase === "spin" ? auctionOpen(f) : f.phase === "bid" ? auctionExpire(f) : f.phase === "sold" ? auctionNext(f) : null;
+    });
+    const grace = me === "a" ? 350 : 1000;
+    const t1 = setTimeout(go, Math.max(0, clock.deadline + grace - Date.now()));
+    const t2 = setTimeout(go, Math.max(0, clock.deadline + grace + 3000 - Date.now()));
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [key, me]);
+  // The reel spins on every new lot, then reveals the fighter.
+  React.useEffect(() => {
+    if (!s || s.phase !== "spin") return;
+    const k = key;
+    run(CHARACTERS, () => setReelDone(k));
+  }, [key]);
+  React.useEffect(() => {
+    if (!code || !me) return;
+    try { sessionStorage.setItem(`animevs:auction-team:${code}:${me}`, JSON.stringify(placed)); } catch (e) {}
+  }, [placed, code, me]);
+
+  // ── derived ──
+  const mine = s && me ? s[me] : null;
+  const theirs = s && other ? s[other] : null;
+  const placedIds = Object.values(placed);
+  const pendingList = mine ? mine.won.filter((w) => !placedIds.includes(w.id)) : [];
+  const pendingChar = pendingList[0] ? byId(pendingList[0].id) : null;
+  const myTeam = {};
+  if (mine) for (const [rid, id] of Object.entries(placed)) { if (mine.won.some((w) => w.id === id) && byId(id)) myTeam[rid] = { character: byId(id), roleId: rid }; }
+  const filled = Object.keys(myTeam).length;
+  const allPlaced = filled === ROLES.length;
+
+  function placeInto(roleId) {
+    if (!pendingChar || placed[roleId]) return;
+    setPlaced((p) => ({ ...p, [roleId]: pendingChar.id }));
+    playPlaceTone();
+  }
+  function autoPlaceRest() {
+    const next = { ...placed };
+    for (const w of pendingList) {
+      const c = byId(w.id);
+      let best = null, bestFit = -1;
+      for (const r of ROLES) { if (next[r.id]) continue; const f = roleFit(c, r.id).bonus; if (f > bestFit) { bestFit = f; best = r.id; } }
+      if (best) next[best] = c.id;
+    }
+    setPlaced(next);
+  }
+  async function bid(amount) {
+    const lot = s.lot;
+    const ok = await commit((f) => (f.lot === lot ? auctionBid(f, me, amount) : null));
+    if (!ok) flash("Too late — the price moved.");
+  }
+  async function fold() {
+    const lot = s.lot;
+    await commit((f) => (f.lot === lot ? auctionFold(f, me) : null));
+  }
+  async function lockIn() {
+    const arr = ROLES.map((r) => myTeam[r.id]);
+    if (arr.some((m) => !m)) return;
+    const c = encodeTeam(arr);
+    if (c) await commit((f) => auctionLock(f, me, c));
+  }
+  function inviteLink() {
+    try { return `${window.location.origin}${window.location.pathname}?room=${code}&m=auction`; } catch (e) { return code; }
+  }
+  function copyInvite() {
+    navigator.clipboard?.writeText(inviteLink()).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1800); });
+  }
+
+  const help = helpOpen ? <HowToPlayModal modeId="auction" onClose={() => { setHelpOpen(false); markSeenHelp(); }} /> : null;
+  const panel = { borderRadius: 14, border: `1px solid ${AUCTION_GOLD}44`, background: `linear-gradient(160deg, ${AUCTION_GOLD}14, rgba(255,255,255,0.02) 65%)` };
+
+  // ── MENU ──
+  if (!code || !s) {
+    return (
+      <div className="tIn" style={{ maxWidth: 560, margin: "0 auto" }}>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10, marginBottom: 6 }}>
+          <div className="a" style={{ fontSize: 28, color: "#f5f5f4" }}>AUCTION</div>
+          <HowToPlayButton onClick={() => setHelpOpen(true)} />
+        </div>
+        <p className="c" style={{ fontSize: 15, color: "#a8a29e", marginBottom: 20 }}>
+          One fighter at a time. ${AUCTION_BUDGET} each. Outbid your rival for the ones you want.
+        </p>
+        {help}
+        {!supabaseConfigured ? (
+          <div style={{ padding: 18, borderRadius: 14, border: "1px solid rgba(248,113,113,0.25)", background: "rgba(248,113,113,0.05)" }}>
+            <div className="a" style={{ fontSize: 20, color: "#fca5a5", marginBottom: 5 }}>LIVE ROOMS UNAVAILABLE</div>
+            <div className="c" style={{ fontSize: 13, color: "#a8a29e" }}>This deployment is missing its Supabase configuration.</div>
+          </div>
+        ) : (
+          <div style={{ ...panel, padding: 20 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <button onClick={createRoom} className="a" style={{ padding: 14, borderRadius: 10, background: AUCTION_GOLD, color: "#1a1004", border: "none", cursor: "pointer", fontSize: 16 }}>CREATE AUCTION ROOM</button>
+              <div style={{ display: "flex", gap: 8 }}>
+                <input id="auction-room-join" placeholder="ROOM CODE" className="c"
+                  style={{ flex: 1, padding: 12, borderRadius: 9, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.14)", color: "#f5f5f4", fontSize: 15, textTransform: "uppercase", outline: "none", letterSpacing: "0.12em" }}
+                  onKeyDown={(e) => { if (e.key === "Enter") joinRoom(e.currentTarget.value); }} />
+                <button onClick={() => joinRoom(document.getElementById("auction-room-join")?.value || "")} className="c"
+                  style={{ padding: "11px 16px", borderRadius: 9, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.14)", color: "#e7e5e4", cursor: "pointer", fontWeight: 700 }}>JOIN</button>
+              </div>
+            </div>
+            {err && <div className="c" style={{ marginTop: 8, fontSize: 12, color: "#f87171" }}>{err}</div>}
+          </div>
+        )}
+        <button onClick={onExit} className="c" style={{ marginTop: 16, background: "transparent", border: "none", color: "#78716c", cursor: "pointer", fontSize: 13 }}>← Back to Versus</button>
+      </div>
+    );
+  }
+
+  // ── LOBBY ──
+  if (s.phase === "lobby") {
+    const guestIn = s.joined.b;
+    return (
+      <div className="tIn" style={{ maxWidth: 560, margin: "0 auto" }}>
+        <div className="a" style={{ fontSize: 28, color: "#f5f5f4", marginBottom: 14 }}>AUCTION ROOM</div>
+        {help}
+        <div style={{ ...panel, padding: 20 }}>
+          <div className="c" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.16em", color: AUCTION_GOLD, fontWeight: 700 }}>Room code · you are player {me.toUpperCase()}</div>
+          <div className="a" style={{ fontSize: 44, color: "#f5f5f4", letterSpacing: "0.16em", margin: "4px 0 12px" }}>{code}</div>
+          {me === "a" && (
+            <button onClick={copyInvite} className="c" style={{ width: "100%", padding: "11px 14px", borderRadius: 9, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.14)", color: "#e7e5e4", cursor: "pointer", fontWeight: 700, marginBottom: 12 }}>
+              {copied ? "✓ INVITE LINK COPIED" : "COPY INVITE LINK"}
+            </button>
+          )}
+          <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+            <PresenceDot label="You" ready={true} />
+            <PresenceDot label="Opponent" ready={guestIn && online !== false} />
+          </div>
+          {me === "a" ? (
+            <button onClick={() => commit((f) => auctionStart(f))} disabled={!guestIn} className="a"
+              style={{ width: "100%", padding: 14, borderRadius: 10, fontSize: 18, border: "none", cursor: guestIn ? "pointer" : "not-allowed", background: guestIn ? AUCTION_GOLD : "#44331a", color: guestIn ? "#1a1004" : "#8a7350" }}>
+              {guestIn ? "START AUCTION" : "WAITING FOR OPPONENT…"}
+            </button>
+          ) : (
+            <div className="c" style={{ textAlign: "center", fontSize: 14, color: "#a8a29e" }}>You're in. Waiting for the host to start…</div>
+          )}
+          {err && <div className="c" style={{ marginTop: 8, fontSize: 12, color: "#f87171" }}>{err}</div>}
+        </div>
+        <button onClick={leave} className="c" style={{ marginTop: 16, background: "transparent", border: "none", color: "#78716c", cursor: "pointer", fontSize: 13 }}>Leave room</button>
+      </div>
+    );
+  }
+
+  // ── RESULT ──
+  if (s.phase === "done") {
+    const a = s.teams[me] ? decodeTeam(s.teams[me]) : { error: "missing" };
+    const b = s.teams[other] ? decodeTeam(s.teams[other]) : { error: "missing" };
+    if (a.error || b.error) {
+      return <div className="tIn" style={{ maxWidth: 560, margin: "0 auto" }}><div className="a" style={{ fontSize: 26, color: "#f5f5f4" }}>COULDN'T READ A TEAM</div><button onClick={leave} className="c" style={{ marginTop: 14, padding: "11px 16px", borderRadius: 9, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.14)", color: "#e7e5e4", cursor: "pointer" }}>BACK</button></div>;
+    }
+    const okTheirs = auctionTeamValid(s, other, b.team);
+    const result = resolvePvP(a.team, b.team);
+    const forfeit = !okTheirs;
+    const iWon = forfeit || result.winner === "a";
+    const tie = !forfeit && result.winner === "tie";
+    return (
+      <div className="tIn" style={{ maxWidth: 680, margin: "0 auto" }}>
+        <div style={{ ...panel, padding: 18, marginBottom: 18 }}>
+          <div className="a" style={{ fontSize: 24, color: "#f5f5f4" }}>AUCTION COMPLETE</div>
+          <div className="c" style={{ fontSize: 13, color: "#a8a29e", marginTop: 4 }}>
+            Room {code} · you spent ${AUCTION_BUDGET - mine.money} and kept ${mine.money} · they spent ${AUCTION_BUDGET - theirs.money}
+          </div>
+        </div>
+        {forfeit && <div className="c" style={{ marginBottom: 12, fontSize: 13, color: "#fbbf24" }}>Your opponent's lineup didn't match the fighters they won, so the match is awarded to you.</div>}
+        <div className="slam" style={{ borderRadius: 16, overflow: "hidden", marginBottom: 18, border: tie ? "1px solid rgba(255,255,255,0.2)" : `1px solid ${iWon ? "#22c55e" : "#ef4444"}` }}>
+          <div style={{ textAlign: "center", padding: "24px 20px", background: tie ? "rgba(255,255,255,0.03)" : iWon ? "linear-gradient(160deg,#0f3d2e,#0b0c10 60%)" : "linear-gradient(160deg,#3d0f14,#0b0c10 60%)" }}>
+            <div className="a" style={{ fontSize: 48, lineHeight: 1, color: tie ? "#e7e5e4" : iWon ? "#4ade80" : "#f87171" }}>{tie ? "DEAD HEAT" : iWon ? "VICTORY" : "DEFEAT"}</div>
+            <div className="c" style={{ fontSize: 16, color: "#a8a29e", marginTop: 8 }}>You {result.a.total.toFixed(0)} · {result.b.total.toFixed(0)} Opponent</div>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr" }}>
+            <TeamColumn label="YOUR TEAM" team={a.team} score={result.a} side="a" win={iWon && !tie} />
+            <TeamColumn label="OPPONENT" team={b.team} score={result.b} side="b" win={!iWon && !tie} />
+          </div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 18 }}>
+          {[["WHAT YOU PAID", mine.won], ["WHAT THEY PAID", theirs.won]].map(([label, won]) => (
+            <div key={label} style={{ padding: 12, borderRadius: 12, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.02)" }}>
+              <div className="c" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.16em", color: AUCTION_GOLD, fontWeight: 700, marginBottom: 6 }}>{label}</div>
+              {won.map((w) => (
+                <div key={w.id} className="c" style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#d6d3d1" }}>
+                  <span>{byId(w.id).name}</span><span style={{ color: w.auto ? "#78716c" : AUCTION_GOLD, fontWeight: 700 }}>{w.auto ? "auto" : `$${w.price}`}</span>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+        <button onClick={leave} className="c" style={{ width: "100%", textTransform: "uppercase", letterSpacing: "0.15em", fontSize: 14, fontWeight: 700, padding: 12, borderRadius: 10, border: "1px solid rgba(255,255,255,0.15)", background: "rgba(255,255,255,0.05)", color: "#e7e5e4", cursor: "pointer" }}>New auction</button>
+      </div>
+    );
+  }
+
+  // ── LIVE AUCTION (spin · bid · sold · lock) ──
+  const lot = s.phase === "lock" ? null : auctionLot(s);
+  const lotVisible = !!lot && (s.phase !== "spin" || reelDone === key);
+  const live = s.phase === "bid";
+  const myMax = auctionMaxBid(s, me);
+  const mustPlace = !!pendingChar && s.phase !== "lock";
+  const iLead = s.hiBy === me, theyLead = s.hiBy === other;
+  const barPct = clock.total ? Math.min(100, (remaining / clock.total) * 100) : 0;
+  const urgent = live && remaining < 3000;
+  const options = live && !mustPlace && !iLead ? auctionBidOptions(s, me) : [];
+  const last = s.last;
+  const soldBanner = s.phase === "sold" && last ? (
+    last.by === null ? { text: "UNSOLD", sub: `${byId(last.id).name} goes back unclaimed`, col: "#a8a29e" }
+    : last.by === me ? { text: "SOLD TO YOU", sub: `${byId(last.id).name} for $${last.price}`, col: "#4ade80" }
+    : { text: "SOLD TO RIVAL", sub: `${byId(last.id).name} for $${last.price}`, col: "#f87171" }
+  ) : null;
+
+  const wallet = (label, side, isMe) => (
+    <div style={{ flex: 1, padding: "8px 10px", borderRadius: 10, background: "rgba(0,0,0,0.3)", border: `1px solid ${isMe ? AUCTION_GOLD + "66" : "rgba(255,255,255,0.1)"}` }}>
+      <div className="c" style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.14em", color: isMe ? AUCTION_GOLD : "#a8a29e", fontWeight: 700 }}>
+        {label}{!isMe && online === false ? " · offline" : ""}
+      </div>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+        <span className="a" style={{ fontSize: 26, color: "#f5f5f4" }}>${s[side].money}</span>
+        <span className="c" style={{ fontSize: 12, color: "#a8a29e" }}>{s[side].won.length}/{PICKS}</span>
+      </div>
+    </div>
+  );
+
+  const reelArea = (
+    <div style={{ ...panel, padding: 14 }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>{wallet("You", me, true)}{wallet("Rival", other, false)}</div>
+      <div className={`spinReel ${spinning ? "spinReelActive" : ""}`} style={{ borderRadius: 12, padding: 14, textAlign: "center", minHeight: 190, display: "flex", flexDirection: "column", justifyContent: "center", background: "rgba(0,0,0,0.28)", border: "1px solid rgba(255,255,255,0.08)" }}>
+        {s.phase === "lock" ? (
+          <div>
+            <div className="a" style={{ fontSize: 28, color: AUCTION_GOLD }}>AUCTION OVER</div>
+            <div className="c" style={{ fontSize: 13, color: "#a8a29e", marginTop: 6 }}>
+              {pendingChar ? "Place your last fighters, then lock in." : allPlaced ? (s.teams[me] ? "Locked. Waiting for your rival…" : "Every role is set — lock in your team.") : "Place your fighters, then lock in."}
+            </div>
+          </div>
+        ) : lotVisible ? (
+          <div key={`${s.lot}:${settleKey}`} className="spinPop spinLand">
+            <div className="c" style={{ fontSize: 11, letterSpacing: "0.2em", color: "#78716c", textTransform: "uppercase" }}>Lot {s.lot + 1}</div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+              <TierBadge tier={lot.tier} />
+              <div className="a" style={{ fontSize: 38, lineHeight: 1, color: "#f5f5f4" }}>{lot.rating}</div>
+            </div>
+            <div className="c" style={{ fontWeight: 700, fontSize: 22, color: "#f5f5f4", marginTop: 2 }}>{lot.name}</div>
+            <div className="c" style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: "0.08em", color: "#a8a29e", marginBottom: 8 }}>{lot.series}</div>
+            <div style={{ display: "flex", gap: 5, justifyContent: "center", flexWrap: "wrap", marginBottom: 8 }}>{lot.tags.map((t) => <Tag key={t} t={t} small />)}</div>
+            <AbilityChip ability={lot.ability} small />
+            <SignatureHint character={lot} />
+            <div className="c" style={{ marginTop: 6, fontSize: 12, color: "#78716c" }}>Draft value ${lot.cost}</div>
+          </div>
+        ) : reelFace ? (
+          <div className="reel reelRolling">
+            <div className="a" style={{ fontSize: 38, lineHeight: 1, color: "#78716c" }}>{reelFace.rating}</div>
+            <div className="c" style={{ fontWeight: 700, fontSize: 22, color: "#78716c", marginTop: 4 }}>{reelFace.name}</div>
+          </div>
+        ) : (
+          <div className="a" style={{ fontSize: 28, color: "#57534e" }}>NEXT FIGHTER…</div>
+        )}
+      </div>
+
+      {live && (
+        <div style={{ marginTop: 12 }}>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+            <div>
+              <div className="c" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.16em", color: "#a8a29e" }}>{s.hiBy ? "Current bid" : "No bids yet"}</div>
+              <div className="a" style={{ fontSize: 40, lineHeight: 1, color: s.hiBy ? (iLead ? "#4ade80" : "#f87171") : "#57534e" }}>{s.hiBy ? `$${s.hi}` : "—"}</div>
+            </div>
+            <div className="c" style={{ textAlign: "right", fontSize: 13, fontWeight: 700, color: iLead ? "#4ade80" : theyLead ? "#f87171" : "#78716c" }}>
+              {iLead ? "You're leading" : theyLead ? "Rival leads" : s.folded ? (s.folded === me ? "You passed" : "Rival passed") : "Open for bids"}
+              <div className="a" style={{ fontSize: 22, color: urgent ? "#ef4444" : "#e7e5e4" }}>{(remaining / 1000).toFixed(1)}s</div>
+            </div>
+          </div>
+          <div style={{ height: 6, borderRadius: 99, background: "rgba(255,255,255,0.08)", marginTop: 8, overflow: "hidden" }}>
+            <div style={{ height: "100%", width: `${barPct}%`, background: urgent ? "#ef4444" : AUCTION_GOLD, transition: "width .1s linear" }} />
+          </div>
+        </div>
+      )}
+      {soldBanner && (
+        <div className="slam" key={key} style={{ marginTop: 12, textAlign: "center", padding: 12, borderRadius: 10, border: `1px solid ${soldBanner.col}66`, background: `${soldBanner.col}14` }}>
+          <div className="a" style={{ fontSize: 26, color: soldBanner.col }}>{soldBanner.text}</div>
+          <div className="c" style={{ fontSize: 13, color: "#d6d3d1" }}>{soldBanner.sub}</div>
+        </div>
+      )}
+    </div>
+  );
+
+  const bidBtn = { padding: "12px 6px", borderRadius: 10, border: `1px solid ${AUCTION_GOLD}`, background: `${AUCTION_GOLD}22`, color: "#fde68a", cursor: "pointer", textAlign: "center" };
+  const belowReel = (
+    <>
+      {pendingChar && (
+        <div style={{ marginTop: 12, padding: 10, borderRadius: 10, border: `1px solid ${AUCTION_GOLD}66`, background: `${AUCTION_GOLD}10` }}>
+          <div className="c" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.14em", color: AUCTION_GOLD, fontWeight: 700, marginBottom: 7 }}>
+            Place {pendingChar.name}{pendingList.length > 1 ? ` (+${pendingList.length - 1} more waiting)` : ""}
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {ROLES.filter((r) => !placed[r.id]).map((r) => {
+              const f = roleFit(pendingChar, r.id);
+              const col = f.tone === "great" ? "#22c55e" : f.tone === "good" ? "#eab308" : "#ef4444";
+              return (
+                <button key={r.id} data-act="place" onClick={() => placeInto(r.id)} className="c"
+                  style={{ padding: "7px 10px", borderRadius: 8, cursor: "pointer", fontWeight: 700, fontSize: 13, color: "#f5f5f4", background: "rgba(0,0,0,0.35)", border: `1px solid ${r.color}88` }}>
+                  {r.name} <span style={{ color: col }}>{f.bonus > 0 ? `+${f.bonus}` : "+0"}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      <div style={{ marginTop: 12 }}>
+        {s.phase === "lock" && pendingChar && (
+          <button onClick={autoPlaceRest} className="c" style={{ width: "100%", padding: 13, borderRadius: 10, background: `${AUCTION_GOLD}22`, border: `1px solid ${AUCTION_GOLD}`, color: "#fde68a", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", cursor: "pointer" }}>Auto-place the rest</button>
+        )}
+        {live && mine.won.length >= PICKS && <div className="c" style={{ textAlign: "center", fontSize: 13, color: "#a8a29e" }}>Your squad is full — you're watching the rest.</div>}
+        {live && mine.won.length < PICKS && mustPlace && (
+          <div className="c" style={{ textAlign: "center", fontSize: 13, color: "#fbbf24", padding: 10, borderRadius: 10, border: "1px solid rgba(251,191,36,0.4)", background: "rgba(251,191,36,0.08)" }}>
+            Place <b>{pendingChar.name}</b> in a role before you can bid again.
+          </div>
+        )}
+        {live && mine.won.length < PICKS && !mustPlace && iLead && (
+          <div className="c" style={{ textAlign: "center", fontSize: 13, color: "#4ade80" }}>You're ahead at ${s.hi}. If the clock runs out, {lot.name} is yours.</div>
+        )}
+        {options.length > 0 && (
+          <>
+            <div style={{ display: "grid", gridTemplateColumns: `repeat(${options.length}, 1fr)`, gap: 8 }}>
+              {options.map((v) => (
+                <button key={v} data-act="bid" onClick={() => bid(v)} style={bidBtn}>
+                  <div className="a" style={{ fontSize: 22, lineHeight: 1 }}>${v}</div>
+                  <div className="c" style={{ fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", marginTop: 3, color: "#d6a756" }}>{v === myMax && v > s.hi + 1 ? "all in" : `+${v - s.hi}`}</div>
+                </button>
+              ))}
+            </div>
+            <button data-act="fold" onClick={fold} className="c" style={{ marginTop: 8, width: "100%", padding: 11, borderRadius: 10, background: "transparent", border: "1px solid rgba(255,255,255,0.18)", color: "#a8a29e", cursor: "pointer", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", fontSize: 13 }}>
+              {theyLead ? `Let go · rival wins at $${s.hi}` : s.folded === me ? "Passed" : "Pass on this fighter"}
+            </button>
+            <div className="c" style={{ marginTop: 6, fontSize: 11, color: "#78716c", textAlign: "center" }}>
+              You can bid up to ${myMax} ({PICKS - mine.won.length - 1 > 0 ? `$${PICKS - mine.won.length - 1} kept back for your other empty slots` : "last slot"}).
+            </div>
+          </>
+        )}
+        {s.phase === "spin" && <div className="c" style={{ textAlign: "center", fontSize: 13, color: "#78716c" }}>Bidding opens in a moment…</div>}
+        {note && <div className="c" style={{ marginTop: 8, textAlign: "center", fontSize: 12, color: "#f87171" }}>{note}</div>}
+        {err && <div className="c" style={{ marginTop: 8, textAlign: "center", fontSize: 12, color: "#f87171" }}>{err}</div>}
+      </div>
+      {theirs.won.length > 0 && (
+        <div style={{ marginTop: 12 }}>
+          <div className="c" style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.16em", color: "#78716c", marginBottom: 5 }}>Rival's squad (roles hidden)</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+            {theirs.won.map((w) => (
+              <span key={w.id} className="c" style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", color: "#d6d3d1" }}>
+                {byId(w.id).name} · {w.auto ? "auto" : `$${w.price}`}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </>
+  );
+
+  return (
+    <div className="tIn">
+      <div style={{ marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+        <div className="c" style={{ fontSize: 12, color: "#a8a29e" }}>Room <b style={{ color: "#f5f5f4", letterSpacing: "0.1em" }}>{code}</b> · player {me.toUpperCase()}</div>
+        <button onClick={leave} className="c" style={{ background: "transparent", border: "none", color: "#78716c", cursor: "pointer", fontSize: 12 }}>Leave</button>
+      </div>
+      <SpinStage
+        title="Auction" subtitle="Win a fighter, then slot them into a role."
+        team={myTeam} activeChar={pendingChar} onPlace={placeInto}
+        allFilled={allPlaced && s.phase === "lock"} onClimb={lockIn} lockedIn={!!s.teams[me]}
+        reelArea={reelArea} belowReel={belowReel}
+        filledCount={filled}
+        footNote={`Roles filled: ${filled}/${ROLES.length} · Bought: ${mine.won.length}/${PICKS}`}
+        onHelp={() => setHelpOpen(true)}
+      />
+      {help}
     </div>
   );
 }
