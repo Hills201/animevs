@@ -40,7 +40,10 @@ const tmp = path.join(os.tmpdir(), `animevs-${Date.now()}.mjs`);
 fs.writeFileSync(tmp, raw.slice(a, b) + `
 export { CHARACTERS, LADDER, ROLES, BUDGET, PICKS, DUOS, DUO_BONUS, CODEC_IDS,
   byId, tagCapFor, roleFit, fittedRating, squadScore, autoAssign, resolveRung,
-  resolvePvP, activeDuos, encodeTeam, decodeTeam, encodeResult, decodeResult };
+  resolvePvP, activeDuos, encodeTeam, decodeTeam, encodeResult, decodeResult,
+  AUCTION_BUDGET, AUCTION_MAX_DRY, auctionOrder, auctionNew, auctionJoin, auctionStart,
+  auctionOpen, auctionBid, auctionFold, auctionExpire, auctionNext, auctionLock,
+  auctionMaxBid, auctionTeamValid, auctionClockMs, auctionKey };
 `);
 const G = await import(pathToFileURL(tmp).href);
 fs.unlinkSync(tmp);
@@ -55,7 +58,10 @@ if (fs.existsSync(factsPath)) {
 
 const { CHARACTERS, LADDER, ROLES, BUDGET, PICKS, DUOS, DUO_BONUS, CODEC_IDS,
         byId, tagCapFor, fittedRating, resolveRung, autoAssign, activeDuos,
-        encodeTeam, decodeTeam, encodeResult, decodeResult } = G;
+        encodeTeam, decodeTeam, encodeResult, decodeResult, resolvePvP,
+        AUCTION_BUDGET, auctionOrder, auctionNew, auctionJoin, auctionStart, auctionOpen,
+        auctionBid, auctionFold, auctionExpire, auctionNext, auctionLock, auctionMaxBid,
+        auctionTeamValid, auctionClockMs, auctionKey } = G;
 
 const roleIds = ROLES.map((r) => r.id);
 const MINCOST = Math.min(...CHARACTERS.map((c) => c.cost));
@@ -259,6 +265,114 @@ for (let i = 0; i < 400; i++) {
 }
 if (broken) fail(`${broken}/${checks} codec roundtrips failed`);
 
+
+// ── 8. live auction ───────────────────────────────────────────────────────
+// Plays whole auctions bot-vs-bot through the same pure transitions the
+// browser uses, and checks the things that would ruin a real match: money
+// going negative, a player stranded unable to fill their team, a fighter sold
+// twice, an auction that never ends, or one seat having an edge.
+const rnd = (n) => Math.floor(Math.random() * n);
+const BOTS = {
+  // Bids up to a noisy estimate of the fighter's worth, then lets go.
+  value: (s, me) => {
+    const c = byId(auctionOrder(s.seed)[s.lot]);
+    const worth = Math.round(c.cost * (0.7 + Math.random() * 0.8));
+    const next = s.hi + (Math.random() < 0.25 ? 2 : 1);
+    return next <= Math.min(worth, auctionMaxBid(s, me)) ? { bid: next } : { fold: true };
+  },
+  // Throws random bids and folds at random.
+  chaos: (s, me) => {
+    const max = auctionMaxBid(s, me);
+    if (max > s.hi && Math.random() < 0.7) return { bid: s.hi + 1 + rnd(Math.max(1, Math.min(4, max - s.hi))) };
+    return { fold: true };
+  },
+  // Never takes part. Forces the unsold / auto-fill path.
+  idle: () => ({ wait: true }),
+};
+function playAuction(botA, botB) {
+  const bots = { a: BOTS[botA], b: BOTS[botB] };
+  let s = auctionJoin(auctionNew((Math.random() * 1e9) | 0));
+  s = auctionStart(s);
+  let steps = 0, lots = 0;
+  const audit = (tag) => {
+    for (const w of ["a", "b"]) {
+      if (s[w].money < 0) fail(`auction ${tag}: ${w} money went negative (${s[w].money})`);
+      if (s[w].won.length > PICKS) fail(`auction ${tag}: ${w} holds ${s[w].won.length} fighters`);
+      if (s[w].won.length < PICKS && s[w].money < PICKS - s[w].won.length) fail(`auction ${tag}: ${w} can no longer afford to fill their team`);
+    }
+    const ids = [...s.a.won, ...s.b.won].map((x) => x.id);
+    if (new Set(ids).size !== ids.length) fail(`auction ${tag}: a fighter was sold twice`);
+  };
+  while (s.phase !== "lock" && steps++ < 5000) {
+    if (s.phase === "spin") { s = auctionOpen(s); lots++; }
+    else if (s.phase === "sold") s = auctionNext(s);
+    else if (s.phase === "bid") {
+      const first = Math.random() < 0.5 ? "a" : "b";
+      let acted = false;
+      for (const who of [first, first === "a" ? "b" : "a"]) {
+        if (s.phase !== "bid") break;
+        if (s.hiBy === who) continue;
+        const act = bots[who](s, who);
+        let n = null;
+        if (act.bid) { n = auctionBid(s, who, act.bid); if (!n && act.bid <= auctionMaxBid(s, who) && act.bid > s.hi) fail(`legal bid refused: ${who} $${act.bid} over $${s.hi}`); }
+        else if (act.fold) n = auctionFold(s, who);
+        if (n) { s = n; acted = true; }
+      }
+      if (s.phase === "bid" && !acted) s = auctionExpire(s); // clock ran out
+      else if (s.phase === "bid" && s.hiBy === null && s.folded && Math.random() < 0.01) s = auctionExpire(s);
+    }
+    audit(`${botA}/${botB} step ${steps}`);
+  }
+  if (s.phase !== "lock") { fail(`auction ${botA}/${botB} never finished (stuck in ${s.phase})`); return null; }
+  for (const w of ["a", "b"]) if (s[w].won.length !== PICKS) fail(`auction ${botA}/${botB}: ${w} ended with ${s[w].won.length}/${PICKS} fighters`);
+  // Lock both sides with auto-assigned roles and make sure the result resolves.
+  const teams = {};
+  for (const w of ["a", "b"]) {
+    teams[w] = autoAssign(s[w].won.map((x) => byId(x.id))).map((m, i) => ({ character: m.character, roleId: roleIds[i] }));
+    if (!auctionTeamValid(s, w, teams[w])) fail(`auction ${botA}/${botB}: ${w}'s own team failed validation`);
+    s = auctionLock(s, w, encodeTeam(teams[w]));
+  }
+  if (!s || s.phase !== "done") { fail(`auction ${botA}/${botB} did not reach "done" after both locked`); return null; }
+  const res = resolvePvP(teams.a, teams.b);
+  if (!Number.isFinite(res.a.total) || !Number.isFinite(res.b.total)) fail(`auction ${botA}/${botB}: NaN in PvP result`);
+  return { s, lots, res, teams };
+}
+// determinism + coverage of the lot order
+const ord1 = auctionOrder(12345), ord2 = auctionOrder(12345), ord3 = auctionOrder(54321);
+if (ord1.join() !== ord2.join()) fail("auction lot order is not deterministic for a given seed");
+if (ord1.join() === ord3.join()) fail("auction lot order ignores the seed");
+if (new Set(ord1).size !== CHARACTERS.length) fail("auction lot order does not contain every fighter exactly once");
+// illegal moves must be refused
+{
+  let s = auctionStart(auctionJoin(auctionNew(7))); s = auctionOpen(s);
+  if (auctionBid(s, "a", 0)) fail("auction accepted a $0 bid");
+  if (auctionBid(s, "a", auctionMaxBid(s, "a") + 1)) fail("auction accepted a bid over the reserve cap");
+  const s2 = auctionBid(s, "a", 3);
+  if (!s2 || s2.hiBy !== "a") fail("auction refused a legal opening bid");
+  if (auctionBid(s2, "a", 5)) fail("auction let the leader outbid themselves");
+  if (auctionBid(s2, "b", 3)) fail("auction accepted a bid that only matched the current high");
+  if (auctionFold(s2, "a")) fail("auction let the leader fold");
+  const sold = auctionFold(s2, "b");
+  if (!sold || sold.last.by !== "a" || sold.last.price !== 3 || sold.a.money !== AUCTION_BUDGET - 3) fail("auction mis-settled a conceded lot");
+  if (auctionStart(s)) fail("auction restarted while already running");
+}
+const MATCHUPS = [["value", "value", 400], ["chaos", "chaos", 150], ["value", "chaos", 150], ["value", "idle", 60], ["idle", "idle", 10]];
+let aGames = 0, aLots = 0, aSpent = 0, aFill = 0, aWinsA = 0, aDecided = 0;
+for (const [x, y, count] of MATCHUPS) {
+  for (let i = 0; i < count; i++) {
+    const g = playAuction(x, y);
+    if (!g) continue;
+    aGames++; aLots += g.lots;
+    if (x === "value" && y === "value") {
+      aSpent += (2 * AUCTION_BUDGET - g.s.a.money - g.s.b.money) / 2;
+      if (g.res.winner !== "tie") { aDecided++; if (g.res.winner === "a") aWinsA++; }
+    }
+    if ([...g.s.a.won, ...g.s.b.won].some((w) => w.auto)) aFill++;
+  }
+}
+const seatA = aDecided ? 100 * aWinsA / aDecided : 50;
+if (seatA < 38 || seatA > 62) fail(`auction seat bias: player A wins ${seatA.toFixed(1)}% of value-vs-value games (want 38–62%)`);
+
 // ── report ────────────────────────────────────────────────────────────────
 const L = (s = "") => console.log(s);
 L(`animeVS health check — ${SRC}`);
@@ -278,6 +392,7 @@ L(`             ${(100 * withDuo / Math.max(n, 1)).toFixed(1)}% land at least on
 L(`             distribution 0→${LADDER.length}: ${hist.join(" ")}`);
 L(`codec        ${checks - broken}/${checks} roundtrips ok`);
 L(`daily        ${dailyLine}`);
+L(`auction      ${aGames} bot games, avg ${(aLots / Math.max(aGames, 1)).toFixed(1)} lots, value bots spend $${(aSpent / 400).toFixed(1)}/${AUCTION_BUDGET}, seat A wins ${seatA.toFixed(1)}%, ${aFill} needed auto-fill`);
 L();
 if (problems.length) {
   L(`✗ ${problems.length} problem${problems.length > 1 ? "s" : ""}:`);

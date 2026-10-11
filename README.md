@@ -1,8 +1,8 @@
 # animeVS
 
-A deterministic anime team-drafting game. Spin or draft a squad of five, slot them into roles, and climb a ten-rung ladder of anime dynasties. Challenge friends head-to-head with shareable team codes.
+A deterministic anime team-drafting game. Spin or draft a squad of seven, slot them into roles, and climb a ten-rung ladder of anime dynasties. Challenge a friend in a live room: build blind, or bid against each other in an auction. There's also a daily guess-the-character puzzle.
 
-Built with React + Vite. Fully static — no backend, no database.
+Built with React + Vite. The solo modes and the Daily puzzle are fully static. Live Versus rooms use a small Supabase database (see below).
 
 ---
 
@@ -67,11 +67,36 @@ Replace `YOUR_USERNAME/YOUR_REPO` with your actual repo (create an empty one fir
 
 ---
 
+## Live Versus rooms (Supabase)
+
+Versus has two formats and each uses its own table:
+
+| Format | Table | Setup |
+|---|---|---|
+| Blind Draft | `rooms` | created earlier; see the SQL in your Supabase project |
+| Auction | `auction_rooms` | run `supabase-auction.sql` once in the Supabase SQL Editor |
+
+Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` locally in `.env.local` and in Vercel's Environment Variables (see `.env.example`). Without them the Versus screens show "live rooms unavailable".
+
+### How Auction mode works
+
+- The whole auction is one JSON object in one row. Pure functions (`auction*` in `src/App.jsx`) are the only code that changes it.
+- Every write is a compare-and-set on the row's `version`, so if both players act at the same instant exactly one write lands and the other re-reads.
+- Each player's browser runs its own countdown. When one runs out it asks the database to advance, keyed on the exact state it saw, so a stale attempt does nothing.
+- Each player must keep $1 back for every empty slot, so nobody can be left unable to finish a team.
+
+## Health check
+
+```bash
+node healthcheck.mjs
+```
+
+Checks roster data, share-link codec order, duo synergies, NaN safety, ladder difficulty, the Daily puzzle, and plays hundreds of bot-vs-bot auctions. It exits non-zero on any failure, so it can gate a deploy.
+
 ## Editing the roster
 
-All 150 characters live in the `CHARACTERS` array at the top of `src/App.jsx`. The in-app **Roster Editor** lets you tune values live and **Export** the full roster as code — paste that back over the `CHARACTERS` array to make changes permanent, then push to redeploy.
+All characters live in the `CHARACTERS` array at the top of `src/App.jsx`. Edit them there, then run `node healthcheck.mjs` before you push. New characters must be appended to the end of `CODEC_IDS`, never inserted, or existing share links will point at the wrong fighters.
 
 ## Notes
 
-- Roster edits made in the live app are per-session (they reset on refresh) until pasted back into `src/App.jsx`. Persisting edits per-visitor would require adding storage (e.g. localStorage or a backend) — not included here.
-- PvP works with no server: a team is encoded into a short code you share. Both players need the same roster version for codes to resolve identically.
+- Both players in a Blind Draft need the same roster version for team codes to resolve identically. Auction rooms are always consistent because both clients derive the lot order from the same seed in the room.
