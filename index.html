@@ -4,8 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <meta name="theme-color" content="#0b0c10" />
-    <title>animeVS</title>
-    <meta name="description" content="Draft a team of anime fighters and climb the ladder. Spin, Draft, and challenge friends head-to-head." />
+    <title>animeVS – Anime Team Drafting Game, Guides &amp; Character Database</title>
+    <meta name="description" content="animeVS is a free anime team-drafting strategy game. Draft seven fighters on a budget, fit them to roles, exploit counters and climb a ten-rung ladder or play live versus a friend. Includes scoring guides and a searchable character database." />
+    <link rel="canonical" href="https://animevs.vercel.app/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="animeVS" />
+    <meta property="og:title" content="animeVS – Anime Team Drafting Game" />
+    <meta property="og:description" content="Draft seven anime fighters on a budget, fit them to roles, exploit counters and climb the ladder." />
+    <meta property="og:url" content="https://animevs.vercel.app/" />
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
@@ -16,12 +22,30 @@
       html, body, #root { margin: 0; padding: 0; background: #0b0c10; min-height: 100%; }
       * { -webkit-tap-highlight-color: transparent; }
     </style>
-    <!-- Google AdSense: replace ca-pub-XXXX with your publisher ID once approved -->
+    <!-- Google AdSense site-verification / loader. Ad units are only placed on the static guide pages, never on game screens. -->
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-1027225143628108"
      crossorigin="anonymous"></script>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!-- Crawlable intro: shown to search engines and before the app loads; React replaces it on mount. -->
+      <main style="max-width:760px;margin:0 auto;padding:32px 20px;font-family:system-ui,sans-serif;color:#e7e5e4;line-height:1.6">
+        <h1 style="font-size:28px;margin:0 0 12px">animeVS: the anime team-drafting strategy game</h1>
+        <p>animeVS is a free browser game where you build a team of seven anime fighters on a limited budget, place each one in the role that suits them, and then test the team against a ten-rung ladder of opponents or a friend in a live versus room. Every result is deterministic: there are no hidden dice, so the team you build is the team that wins or loses.</p>
+        <p>Pick a mode: <strong>Draft</strong> (spend 50 credits across seven picks), <strong>Spin</strong> (take what the wheel gives you), <strong>Versus</strong> (blind draft or live auction against another player) and the <strong>Daily</strong> challenge.</p>
+        <h2 style="font-size:20px;margin:24px 0 8px">Guides</h2>
+        <ul>
+          <li><a style="color:#fca5a5" href="/guides/how-to-play">How to play</a></li>
+          <li><a style="color:#fca5a5" href="/guides/scoring">How scoring works</a></li>
+          <li><a style="color:#fca5a5" href="/guides/counters">Counters explained</a></li>
+          <li><a style="color:#fca5a5" href="/guides/ladder">Ladder guide, rung by rung</a></li>
+          <li><a style="color:#fca5a5" href="/guides/budget-strategy">Budget strategy</a></li>
+          <li><a style="color:#fca5a5" href="/characters">Character database</a></li>
+        </ul>
+        <p><a style="color:#a8a29e" href="/about">About</a> · <a style="color:#a8a29e" href="/privacy">Privacy</a> · <a style="color:#a8a29e" href="/contact">Contact</a></p>
+        <noscript><p>animeVS needs JavaScript for the game itself, but the guides above work without it.</p></noscript>
+      </main>
+    </div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
