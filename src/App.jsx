@@ -969,7 +969,7 @@ export default function App() {
   return (
     <div style={{ minHeight:"100vh", background:INK, color:"#e7e5e4", fontFamily:"'Barlow', system-ui, sans-serif" }}>
       <Fonts />
-      <div style={{ position:"relative", maxWidth:1024, margin:"0 auto", padding:"28px 20px 120px" }}>
+      <div style={{ position:"relative", maxWidth:1024, margin:"0 auto", padding:"28px 20px 48px" }}>
         <div style={{ position:"absolute", inset:0, pointerEvents:"none", background:"radial-gradient(circle at 50% 0%, rgba(255,45,53,0.10), transparent 45%)" }} />
         <div style={{ position:"relative" }}>
           <Header mode={mode} onHome={() => { try { window.history.replaceState({}, "", window.location.pathname); } catch (e) {} setMode(null); }} onFeedback={() => setFeedbackOpen(true)} onGuide={() => setGuideOpen(true)} />
@@ -981,7 +981,6 @@ export default function App() {
           {mode === "result" && <SharedResultView setMode={setMode} />}
         </div>
       </div>
-      <AdBanner />
       {feedbackOpen && <FeedbackModal currentMode={mode} onClose={() => setFeedbackOpen(false)} />}
       {guideOpen && <SystemGuideModal onClose={() => setGuideOpen(false)} />}
       <Analytics />
@@ -1440,54 +1439,6 @@ function FeedbackModal({ currentMode, onClose }) {
     </div>
   );
 }
-// Non-intrusive sticky banner pinned to the bottom. Never covers gameplay
-// (the page reserves bottom padding for it). Uses Google AdSense.
-//
-// SETUP: replace the two placeholders below with your real AdSense IDs:
-//   1. AD_CLIENT — your publisher ID, looks like "ca-pub-1234567890123456"
-//   2. AD_SLOT   — an ad-unit slot ID you create in the AdSense dashboard
-// Until both are set, a subtle placeholder bar shows instead (no broken ad).
-const AD_CLIENT = "ca-pub-1027225143628108"; // <-- your AdSense publisher ID
-const AD_SLOT = "XXXXXXXXXX";                // <-- your AdSense ad-unit slot ID
-
-function AdBanner() {
-  const configured = !AD_CLIENT.includes("X") && !AD_SLOT.includes("X");
-
-  React.useEffect(() => {
-    if (!configured) return;
-    // load the AdSense library once
-    if (!document.querySelector('script[data-animevs-ads]')) {
-      const s = document.createElement("script");
-      s.async = true;
-      s.src = `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${AD_CLIENT}`;
-      s.crossOrigin = "anonymous";
-      s.setAttribute("data-animevs-ads", "1");
-      document.head.appendChild(s);
-    }
-    try { (window.adsbygoogle = window.adsbygoogle || []).push({}); } catch (e) {}
-  }, [configured]);
-
-  return (
-    <div style={{ position:"fixed", left:0, right:0, bottom:0, zIndex:50,
-      display:"flex", justifyContent:"center", alignItems:"center",
-      minHeight:60, background:"rgba(11,12,16,0.92)", backdropFilter:"blur(6px)",
-      borderTop:"1px solid rgba(255,255,255,0.08)" }}>
-      {configured ? (
-        <ins className="adsbygoogle"
-          style={{ display:"block", width:"100%", height:60 }}
-          data-ad-client={AD_CLIENT}
-          data-ad-slot={AD_SLOT}
-          data-ad-format="horizontal"
-          data-full-width-responsive="false" />
-      ) : (
-        <span className="c" style={{ fontSize:11, letterSpacing:"0.2em", textTransform:"uppercase", color:"#57534e" }}>
-          advertisement
-        </span>
-      )}
-    </div>
-  );
-}
-
 function Fonts() {
   return <style>{`
     @import url('https://fonts.googleapis.com/css2?family=Anton&family=Barlow:wght@400;500;600;700;800&family=Barlow+Condensed:wght@600;700;800&display=swap');
@@ -1618,6 +1569,19 @@ function Home({ setMode }) {
           Fit a character's tags to its role for a bonus. Force a misfit and they underperform.
         </p>
       </div>
+      <nav aria-label="Guides and site info" style={{ marginTop:20, padding:16, borderRadius:12, border:"1px solid rgba(255,255,255,0.08)", background:"rgba(255,255,255,0.02)" }}>
+        <div className="c" style={{ fontSize:13, textTransform:"uppercase", letterSpacing:"0.2em", color:RED, fontWeight:700, marginBottom:8 }}>Guides &amp; strategy</div>
+        <div style={{ display:"flex", flexWrap:"wrap", gap:"6px 16px" }}>
+          {[["/guides/how-to-play","How to play"],["/guides/scoring","How scoring works"],["/guides/counters","Counters"],["/guides/ladder","Ladder guide"],["/guides/budget-strategy","Budget strategy"],["/characters","Character database"]].map(([href,label]) => (
+            <a key={href} href={href} className="c" style={{ color:"#e7e5e4", fontSize:15, fontWeight:600, textDecoration:"underline", textUnderlineOffset:3 }}>{label}</a>
+          ))}
+        </div>
+        <div style={{ display:"flex", flexWrap:"wrap", gap:"6px 16px", marginTop:12 }}>
+          {[["/about","About"],["/privacy","Privacy"],["/contact","Contact"]].map(([href,label]) => (
+            <a key={href} href={href} className="c" style={{ color:"#a8a29e", fontSize:13 }}>{label}</a>
+          ))}
+        </div>
+      </nav>
 
     </div>
   );
