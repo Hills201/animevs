@@ -122,7 +122,7 @@ function GuessInput({ characters, guessed, onGuess, disabled }) {
         }}
         placeholder={disabled ? "Come back tomorrow" : "Name any fighter…"}
         className="c"
-        style={{ width:"100%", padding:"13px 14px", borderRadius:10, fontSize:15, fontWeight:600,
+        style={{ width:"100%", boxSizing:"border-box", padding:"13px 14px", borderRadius:10, fontSize:15, fontWeight:600,
           background:"rgba(255,255,255,0.05)", color:"#f5f5f4", outline:"none",
           border:`1px solid ${open && matches.length ? RED : "rgba(255,255,255,0.16)"}`,
           opacity: disabled ? 0.5 : 1 }}

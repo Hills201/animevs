@@ -1471,6 +1471,8 @@ function Fonts() {
     .vsShake{animation:vsShake .5s ease-in-out infinite}
     .verdictPop{animation:verdictPop .5s cubic-bezier(.2,.8,.2,1) both}
     .sweepBar{background:linear-gradient(90deg,rgba(255,45,53,.15) 25%,rgba(255,45,53,.5) 50%,rgba(255,45,53,.15) 75%);background-size:200% 100%;animation:sweep 1.1s linear infinite}
+    @media(max-width:519px){.slotTags{display:none!important}}
+    .redBtn:active{transform:translateY(2px)}
     .hov{transition:transform .12s,border-color .12s,box-shadow .12s}
     .hov:hover{transform:translateY(-3px);border-color:!important;box-shadow:0 10px 30px -12px rgba(255,45,53,.55)}
     .redBtn{transition:background .12s} .redBtn:hover{background:#ff474e!important}
@@ -1917,7 +1919,7 @@ function RoleSlot({ role, member, active, onClick, disabled }) {
             <div className="c" style={{ fontSize:11, color:"#78716c", marginBottom:4 }}>
               {member.character.rating} base{fit.bonus>0 && ` + ${fit.bonus} fit`} = {fittedRating(member.character, role.id)}
             </div>
-            <div style={{ display:"flex", gap:4, flexWrap:"wrap" }}>{member.character.tags.map((t)=><Tag key={t} t={t} small />)}</div>
+            <div className="slotTags" style={{ display:"flex", gap:4, flexWrap:"wrap" }}>{member.character.tags.map((t)=><Tag key={t} t={t} small />)}</div>
           </div>
           <AbilityChip ability={member.character.ability} small />
         </div>
@@ -2285,36 +2287,78 @@ function SynergyStrip({ team, activeChar }) {
 function SpinStage({
   title, subtitle, team, activeChar, onPlace, allFilled, onClimb,
   reelArea, belowReel, filledCount, footNote, onHelp, lockedIn=false,
+  accent=RED, hud=null, quickPlace=true,
 }) {
+  const openRoles = ROLES.filter((r) => !team[r.id]);
   return (
     <div className="tIn">
-      <div style={{ display:"grid", gridTemplateColumns:"1fr", gap:20 }} className="spinGrid">
-        <style>{`@media(min-width:820px){.spinGrid{grid-template-columns:320px 1fr!important}}`}</style>
+      <div style={{ display:"grid", gridTemplateColumns:"minmax(0,1fr)", gap:20 }} className="spinGrid">
+        <style>{`@media(min-width:820px){.spinGrid{grid-template-columns:320px minmax(0,1fr)!important}.quickPlace{display:none!important}}`}</style>
 
         {/* left: spinner column */}
-        <div>
-          <div style={{ marginBottom:12, display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:10 }}>
-            <div>
-              <div className="c" style={{ color:RED, letterSpacing:"0.25em", fontSize:12, textTransform:"uppercase" }}>{title}</div>
-              {subtitle && <div className="c" style={{ fontSize:13, color:"#a8a29e", marginTop:2 }}>{subtitle}</div>}
+        <div style={{ minWidth:0 }}>
+          <div style={{ marginBottom:14, padding:"12px 14px 12px", borderRadius:16, border:`1px solid ${accent}44`,
+            background:`linear-gradient(150deg, ${accent}22, rgba(255,255,255,0.02) 72%)` }}>
+            <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:10 }}>
+              <div style={{ minWidth:0 }}>
+                <div className="a" style={{ fontSize:22, lineHeight:1.1, color:"#f5f5f4", overflowWrap:"anywhere" }}>{title}</div>
+                {subtitle && <div className="c" style={{ fontSize:13, color:"#a8a29e", marginTop:3 }}>{subtitle}</div>}
+              </div>
+              {onHelp && <HowToPlayButton onClick={onHelp} />}
             </div>
-            {onHelp && <HowToPlayButton onClick={onHelp} />}
+            <div style={{ display:"flex", gap:5, marginTop:12 }} role="img" aria-label={`${filledCount} of ${ROLES.length} roles filled`}>
+              {ROLES.map((r) => (
+                <div key={r.id} title={r.name} style={{ flex:1, height:7, borderRadius:99, transition:"background .25s",
+                  background: team[r.id] ? r.color : "rgba(255,255,255,0.10)" }} />
+              ))}
+            </div>
+            <div className="c" style={{ display:"flex", justifyContent:"space-between", marginTop:6, fontSize:12, color:"#78716c", letterSpacing:"0.06em", textTransform:"uppercase" }}>
+              <span>{filledCount}/{ROLES.length} roles</span>
+              {filledCount < ROLES.length && <span>{ROLES.length - filledCount} to go</span>}
+            </div>
+            {hud}
           </div>
           {reelArea}
           {belowReel}
+          {quickPlace && activeChar && !allFilled && openRoles.length > 0 && (
+            <div className="quickPlace" style={{ marginTop:12, padding:12, borderRadius:14, border:`1px solid ${accent}66`, background:`${accent}14` }}>
+              <div className="c" style={{ fontSize:12, letterSpacing:"0.16em", textTransform:"uppercase", color:"#e7e5e4", fontWeight:700, marginBottom:8 }}>
+                Place {activeChar.name} in
+              </div>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+                {openRoles.map((r) => {
+                  const f = roleFit(activeChar, r.id);
+                  const fc = f.tone==="great" ? "#22c55e" : f.tone==="good" ? "#eab308" : "#ef4444";
+                  return (
+                    <button key={r.id} onClick={() => onPlace(r.id)} className="c hov"
+                      style={{ textAlign:"left", padding:"9px 10px", borderRadius:10, cursor:"pointer", color:"#e7e5e4", minWidth:0,
+                        border:`1px solid ${r.color}66`, background:"rgba(0,0,0,0.32)" }}>
+                      <span style={{ display:"flex", alignItems:"center", gap:6 }}>
+                        <span style={{ height:8, width:8, borderRadius:99, background:r.color, flexShrink:0 }} />
+                        <span style={{ fontWeight:700, fontSize:15, color:"#f5f5f4", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{r.name}</span>
+                      </span>
+                      <span style={{ display:"block", fontSize:11, fontWeight:700, color:fc, textTransform:"uppercase", letterSpacing:"0.05em", marginTop:3 }}>
+                        {f.label}{activeChar.role === r.id && !/signature/i.test(f.label) ? " · ★" : ""}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           <div className="c" style={{ marginTop:12, fontSize:12, color:"#78716c", textAlign:"center" }}>{footNote}</div>
         </div>
 
         {/* right: the seven role slots */}
-        <div>
+        <div style={{ minWidth:0 }}>
           <SideTitle>Your Formation</SideTitle>
-          <div style={{ display:"grid", gridTemplateColumns:"1fr", gap:10, marginTop:10 }} className="roleGrid">
-            <style>{`@media(min-width:520px){.roleGrid{grid-template-columns:1fr 1fr!important}}`}</style>
+          <div style={{ display:"grid", gridTemplateColumns:"minmax(0,1fr)", gap:10, marginTop:10 }} className="roleGrid">
+            <style>{`@media(min-width:520px){.roleGrid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important}}`}</style>
             {ROLES.map((role, i) => {
               const member = team[role.id];
               const canPlace = activeChar && !member;
               return (
-                <div key={role.id} style={{ gridColumn: (i === ROLES.length - 1 && ROLES.length % 2 === 1 ? "1 / -1" : "auto") }}>
+                <div key={role.id} style={{ gridColumn: (i === ROLES.length - 1 && ROLES.length % 2 === 1 ? "1 / -1" : "auto"), minWidth:0 }}>
                   <RoleSlot role={role} member={member} active={canPlace} disabled={!canPlace}
                     onClick={() => canPlace && onPlace(role.id)} />
                 </div>
@@ -2326,7 +2370,7 @@ function SpinStage({
 
           {allFilled ? (
             <button onClick={onClimb} disabled={lockedIn} className="a redBtn"
-              style={{ marginTop:16, width:"100%", fontSize:20, letterSpacing:"0.03em", padding:"14px", borderRadius:10, background:lockedIn?"#166534":RED, color:"#fff", border:"none", cursor:lockedIn?"default":"pointer", boxShadow:lockedIn?"none":"0 8px 30px -8px rgba(255,45,53,0.7)", opacity:lockedIn?0.95:1 }}>
+              style={{ marginTop:16, width:"100%", fontSize:20, letterSpacing:"0.03em", padding:"14px", borderRadius:12, background:lockedIn?"#166534":RED, color:"#fff", border:"none", cursor:lockedIn?"default":"pointer", boxShadow:lockedIn?"none":"0 4px 0 #a31219, 0 12px 30px -10px rgba(255,45,53,0.7)", opacity:lockedIn?0.95:1 }}>
               {lockedIn ? "LOCKED IN ✓" : "LOCK IN TEAM →"}
             </button>
           ) : activeChar ? (
@@ -2463,7 +2507,7 @@ function SpinMode() {
   if (phase === "done") return <ClimbResult team={ROLES.map((r)=>team[r.id])} onReplay={reset} replayLabel="NEW SPIN" />;
 
   const reelArea = (
-    <div className={`spinReel ${spinning ? "spinReelActive" : ""}`} style={{ borderRadius:16, padding:20, border:"1px solid rgba(255,255,255,0.12)", background:"linear-gradient(160deg,rgba(255,45,53,0.10),rgba(255,255,255,0.02) 60%)", textAlign:"center", minHeight:210, display:"flex", flexDirection:"column", justifyContent:"center" }}>
+    <div className={`spinReel ${spinning ? "spinReelActive" : ""}`} style={{ borderRadius:16, padding:20, border:"1px solid rgba(255,255,255,0.12)", background:"linear-gradient(160deg,rgba(255,45,53,0.10),rgba(255,255,255,0.02) 60%)", textAlign:"center", minHeight: current ? 0 : 210, display:"flex", flexDirection:"column", justifyContent:"center" }}>
       {current ? (
         <div key={settleKey} className="spinPop spinLand">
           <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
@@ -2498,7 +2542,7 @@ function SpinMode() {
           style={{ marginTop:14, width:"100%", fontSize:26, letterSpacing:"0.05em", padding:"16px", borderRadius:12,
             background:(spinning||allFilled)?"#44210f":RED, color:"#fff", border:"none",
             cursor:(spinning||allFilled)?"not-allowed":"pointer",
-            boxShadow:(spinning||allFilled)?"none":"0 8px 30px -8px rgba(255,45,53,0.7)" }}>
+            boxShadow:(spinning||allFilled)?"none":"0 4px 0 #a31219, 0 12px 30px -10px rgba(255,45,53,0.7)" }}>
           {allFilled ? "TEAM FULL" : spinning ? "SPINNING…" : "SPIN"}
         </button>
       )}
@@ -2618,13 +2662,18 @@ function DraftMode() {
   const maxAffordable = budgetLeftForPick - reserveNeeded;
 
   const reelArea = (
-    <div className={`spinReel ${spinning ? "spinReelActive" : ""}`} style={{ borderRadius:16, padding:16, border:"1px solid rgba(255,255,255,0.12)", background:"linear-gradient(160deg,rgba(59,130,246,0.10),rgba(255,255,255,0.02) 60%)", minHeight:210 }}>
+    <div className={`spinReel ${spinning ? "spinReelActive" : ""}`} style={{ borderRadius:16, padding:16, border:"1px solid rgba(59,130,246,0.30)", background:"linear-gradient(160deg,rgba(59,130,246,0.14),rgba(255,255,255,0.02) 60%)", minHeight: current ? 0 : 210 }}>
       {current ? (
         <div key={settleKey} className="spinPop spinLand" style={{ textAlign:"center", padding:"12px 0" }}>
-          <div className="a" style={{ fontSize:40, lineHeight:1, color:"#f5f5f4" }}>{current.rating}</div>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
+            <TierBadge tier={current.tier} />
+            <div className="a" style={{ fontSize:40, lineHeight:1, color:"#f5f5f4" }}>{current.rating}</div>
+          </div>
           <div className="c" style={{ fontWeight:700, fontSize:22, color:"#f5f5f4", marginTop:4 }}>{current.name}</div>
           <div className="c" style={{ fontSize:12, textTransform:"uppercase", letterSpacing:"0.08em", color:"#a8a29e", marginBottom:8 }}>{current.series} · {current.cost} cr</div>
-          <div style={{ display:"flex", gap:5, justifyContent:"center", flexWrap:"wrap" }}>{current.tags.map((t)=><Tag key={t} t={t} />)}</div>
+          <div style={{ display:"flex", gap:5, justifyContent:"center", flexWrap:"wrap", marginBottom:8 }}>{current.tags.map((t)=><Tag key={t} t={t} />)}</div>
+          <AbilityChip ability={current.ability} />
+          <SignatureHint character={current} />
           <div className="c" style={{ marginTop:12, fontSize:13, color:RED, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.1em" }}>Pick a role → to place</div>
         </div>
       ) : options ? (
@@ -2702,14 +2751,14 @@ function DraftMode() {
           style={{ marginTop:14, width:"100%", fontSize:26, letterSpacing:"0.05em", padding:"16px", borderRadius:12,
             background:(spinning||allFilled)?"#44210f":RED, color:"#fff", border:"none",
             cursor:(spinning||allFilled)?"not-allowed":"pointer",
-            boxShadow:(spinning||allFilled)?"none":"0 8px 30px -8px rgba(255,45,53,0.7)" }}>
+            boxShadow:(spinning||allFilled)?"none":"0 4px 0 #a31219, 0 12px 30px -10px rgba(255,45,53,0.7)" }}>
           {allFilled ? "TEAM FULL" : spinning ? "SPINNING…" : "SPIN"}
         </button>
       )}
       {options && (
         <button onClick={reroll} disabled={rerollsUsed>=MAX_REROLLS || spinning}
           className={rerollsUsed>=MAX_REROLLS?"":"ghostBtn"}
-          style={{ marginTop:12, width:"100%", textTransform:"uppercase", letterSpacing:"0.2em", fontSize:14, fontWeight:700, padding:"12px", borderRadius:10, background:"transparent",
+          style={{ marginTop:12, width:"100%", textTransform:"uppercase", letterSpacing:"0.1em", fontSize:14, fontWeight:700, padding:"12px", borderRadius:10, background:"transparent",
             border: rerollsUsed>=MAX_REROLLS?"1px solid rgba(255,255,255,0.08)":`1px solid ${RED}66`,
             color: rerollsUsed>=MAX_REROLLS?"#57534e":RED, cursor:(rerollsUsed>=MAX_REROLLS||spinning)?"not-allowed":"pointer" }}>
           {rerollsUsed>=MAX_REROLLS ? "Rerolls used" : `↻ Reroll these options · ${MAX_REROLLS - rerollsUsed} left`}
@@ -2726,7 +2775,11 @@ function DraftMode() {
   return (
     <>
       <SpinStage
-        title="Draft Mode" subtitle={`Spin for five · ${remaining} credits left`}
+        title="Draft Mode" subtitle="Spin for five, pick one, place it." accent="#3b82f6"
+        hud={<div style={{ marginTop:10 }}>
+          <div className="c" style={{ display:"flex", justifyContent:"space-between", fontSize:12, letterSpacing:"0.06em", textTransform:"uppercase", color:"#93c5fd", marginBottom:4 }}><span>Budget</span><span>{remaining} / {BUDGET} cr</span></div>
+          <div style={{ height:7, borderRadius:99, background:"rgba(255,255,255,0.10)", overflow:"hidden" }}><div style={{ width:`${Math.max(0, Math.min(100, (remaining / BUDGET) * 100))}%`, height:"100%", background:"#3b82f6", borderRadius:99, transition:"width .3s" }} /></div>
+        </div>}
         team={team} activeChar={current} onPlace={placeInto}
         allFilled={allFilled} onClimb={() => setPhase("done")}
         reelArea={reelArea} belowReel={belowReel}
@@ -2986,7 +3039,7 @@ function PvpMode() {
               <button onClick={createLiveRoom} className="a" style={{ padding:14, borderRadius:10, background:"#22c55e", color:"#07130a", border:"none", cursor:"pointer", fontSize:16 }}>CREATE ROOM</button>
               <div style={{ display:"flex", gap:8 }}>
                 <input id="pvp-room-join" placeholder="ROOM CODE" className="c"
-                  style={{ flex:1, padding:"12px", borderRadius:9, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.14)", color:"#f5f5f4", fontSize:15, textTransform:"uppercase", outline:"none", letterSpacing:"0.12em" }}
+                  style={{ minWidth:0, flex:1, padding:"12px", borderRadius:9, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.14)", color:"#f5f5f4", fontSize:15, textTransform:"uppercase", outline:"none", letterSpacing:"0.12em" }}
                   onKeyDown={(e)=>{ if(e.key === "Enter") joinLiveRoom(e.currentTarget.value); }} />
                 <button onClick={()=>joinLiveRoom(document.getElementById("pvp-room-join")?.value || "")} className="c" style={{ padding:"11px 16px", borderRadius:9, background:"rgba(255,255,255,0.08)", border:"1px solid rgba(255,255,255,0.14)", color:"#e7e5e4", cursor:"pointer", fontWeight:700 }}>JOIN</button>
               </div>
@@ -3073,7 +3126,7 @@ function PvpMode() {
           </div>
         )}
         <SpinStage
-          title="Versus — build hidden" subtitle="Your opponent can't see your picks."
+          title="Versus — build hidden" subtitle="Your opponent can't see your picks." accent="#a855f7"
           team={myTeam} activeChar={current} onPlace={placeInto}
           allFilled={allFilled} onClimb={lockIn} lockedIn={pvpLocked || !!(roomRole === "a" ? roomState?.player_a_ready : roomRole === "b" ? roomState?.player_b_ready : false)}
           reelArea={reelArea} belowReel={belowReel}
@@ -3145,7 +3198,7 @@ function PvpMode() {
           <div style={{ display:"flex", gap:8 }}>
             <input value={oppCode} onChange={(e)=>{ setOppCode(e.target.value); setOppError(""); }}
               placeholder="Paste opponent's code or link…" className="c"
-              style={{ flex:1, padding:"10px 12px", borderRadius:8, background:"rgba(255,255,255,0.05)", border:`1px solid ${oppError?"#ef4444":"rgba(255,255,255,0.14)"}`, color:"#f5f5f4", fontSize:14, outline:"none" }} />
+              style={{ minWidth:0, flex:1, padding:"10px 12px", borderRadius:8, background:"rgba(255,255,255,0.05)", border:`1px solid ${oppError?"#ef4444":"rgba(255,255,255,0.14)"}`, color:"#f5f5f4", fontSize:14, outline:"none" }} />
             <button onClick={tryDecodeOpponent} className="c" style={{ padding:"10px 18px", borderRadius:8, background:"#a855f7", color:"#fff", border:"none", cursor:"pointer", fontWeight:700, fontSize:14 }}>REVEAL</button>
           </div>
           {oppError && <div className="c" style={{ fontSize:12, color:"#ef4444", marginTop:6 }}>{oppError}</div>}
@@ -3465,7 +3518,7 @@ function AuctionMode({ onExit }) {
               <button onClick={createRoom} className="a" style={{ padding: 14, borderRadius: 10, background: AUCTION_GOLD, color: "#1a1004", border: "none", cursor: "pointer", fontSize: 16 }}>CREATE AUCTION ROOM</button>
               <div style={{ display: "flex", gap: 8 }}>
                 <input id="auction-room-join" placeholder="ROOM CODE" className="c"
-                  style={{ flex: 1, padding: 12, borderRadius: 9, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.14)", color: "#f5f5f4", fontSize: 15, textTransform: "uppercase", outline: "none", letterSpacing: "0.12em" }}
+                  style={{ minWidth:0, flex: 1, padding: 12, borderRadius: 9, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.14)", color: "#f5f5f4", fontSize: 15, textTransform: "uppercase", outline: "none", letterSpacing: "0.12em" }}
                   onKeyDown={(e) => { if (e.key === "Enter") joinRoom(e.currentTarget.value); }} />
                 <button onClick={() => joinRoom(document.getElementById("auction-room-join")?.value || "")} className="c"
                   style={{ padding: "11px 16px", borderRadius: 9, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.14)", color: "#e7e5e4", cursor: "pointer", fontWeight: 700 }}>JOIN</button>
@@ -3730,7 +3783,7 @@ function AuctionMode({ onExit }) {
         <button onClick={leave} className="c" style={{ background: "transparent", border: "none", color: "#78716c", cursor: "pointer", fontSize: 12 }}>Leave</button>
       </div>
       <SpinStage
-        title="Auction" subtitle="Win a fighter, then slot them into a role."
+        title="Auction" subtitle="Win a fighter, then slot them into a role." accent="#a855f7" quickPlace={false}
         team={myTeam} activeChar={pendingChar} onPlace={placeInto}
         allFilled={allPlaced && s.phase === "lock"} onClimb={lockIn} lockedIn={!!s.teams[me]}
         reelArea={reelArea} belowReel={belowReel}
