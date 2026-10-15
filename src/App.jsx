@@ -3,6 +3,7 @@ import { Analytics } from "@vercel/analytics/react";
 import { SpeedInsights } from "@vercel/speed-insights/react";
 import { supabase, supabaseConfigured } from "./supabaseClient.js";
 import DailyGame from "./DailyGame.jsx";
+import { dayNumber } from "./animeFacts.js";
 
 // ─── ROSTER (150) ───────────────────────────────────────────────────────────
 const CHARACTERS = [
@@ -970,7 +971,7 @@ export default function App() {
     <div style={{ minHeight:"100vh", background:INK, color:"#e7e5e4", fontFamily:"'Barlow', system-ui, sans-serif" }}>
       <Fonts />
       <div style={{ position:"relative", maxWidth:1024, margin:"0 auto", padding:"28px 20px 48px" }}>
-        <div style={{ position:"absolute", inset:0, pointerEvents:"none", background:"radial-gradient(circle at 50% 0%, rgba(255,45,53,0.10), transparent 45%)" }} />
+        {mode !== null && <div style={{ position:"absolute", inset:0, pointerEvents:"none", background:"radial-gradient(circle at 50% 0%, rgba(255,45,53,0.10), transparent 45%)", WebkitMaskImage:"linear-gradient(to right, transparent, #000 18%, #000 82%, transparent)", maskImage:"linear-gradient(to right, transparent, #000 18%, #000 82%, transparent)" }} />}
         <div style={{ position:"relative" }}>
           <Header mode={mode} onHome={() => { try { window.history.replaceState({}, "", window.location.pathname); } catch (e) {} setMode(null); }} onFeedback={() => setFeedbackOpen(true)} onGuide={() => setGuideOpen(true)} />
           {mode === null && <Home setMode={setMode} />}
@@ -1525,64 +1526,331 @@ function Header({ mode, onHome, onFeedback, onGuide }) {
 }
 
 // ─── HOME ─────────────────────────────────────────────────────────────────
-function Home({ setMode }) {
-  const cards = [
-    { id:"spin", title:"SPIN", tagline:"Spin the reel. Take it or risk another. Slot fighters into seven roles.", accent:RED },
-    { id:"draft", title:"DRAFT", tagline:"Five draws, one budget. Build the sharpest squad you can afford.", accent:"#3b82f6" },
-    { id:"pvp", title:"VERSUS", tagline:"Live two-player rooms. Build blind, or bid against your rival in an auction.", accent:"#a855f7" },
-    { id:"daily", title:"DAILY", tagline:"One mystery character, seven guesses. Same puzzle for everyone, every day.", accent:"#fbbf24" },
-  ];
+// ─── PLAYER PROFILE (local only) ────────────────────────────────────────────
+// Everything the home hub shows about the player lives in this browser's
+// localStorage. Nothing is sent anywhere. Every read/write is try/catch'd so a
+// blocked or full storage never breaks a game.
+const PROFILE_KEY = "animevs-profile-v1";
+const RANKS = [
+  { xp:0,    name:"Rookie" },
+  { xp:60,   name:"Challenger" },
+  { xp:160,  name:"Contender" },
+  { xp:320,  name:"Veteran" },
+  { xp:600,  name:"Elite" },
+  { xp:1000, name:"Master" },
+  { xp:1600, name:"Legend" },
+];
+function emptyProfile() { return { xp:0, runs:0, bestRung:0, champions:0, reachedSum:0, spinRuns:0, draftRuns:0 }; }
+function loadProfile() {
+  try { return { ...emptyProfile(), ...(JSON.parse(localStorage.getItem(PROFILE_KEY)) || {}) }; } catch (e) { return emptyProfile(); }
+}
+let _lastRunKey = "";
+function recordRun({ key, reached, champion, kind }) {
+  if (key && key === _lastRunKey) return; // StrictMode / remount guard
+  _lastRunKey = key || "";
+  try {
+    const p = loadProfile();
+    p.runs += 1;
+    p.reachedSum += reached;
+    p.bestRung = Math.max(p.bestRung, reached);
+    if (champion) p.champions += 1;
+    if (kind === "spin") p.spinRuns += 1; else if (kind === "draft") p.draftRuns += 1;
+    p.xp += 10 + reached * 8 + (champion ? 100 : 0);
+    localStorage.setItem(PROFILE_KEY, JSON.stringify(p));
+  } catch (e) {}
+}
+function rankFor(xp) {
+  let i = 0;
+  for (let k = 0; k < RANKS.length; k++) if (xp >= RANKS[k].xp) i = k;
+  const cur = RANKS[i], next = RANKS[i + 1] || null;
+  const pct = next ? Math.round(((xp - cur.xp) / (next.xp - cur.xp)) * 100) : 100;
+  return { index:i, cur, next, pct, toNext: next ? next.xp - xp : 0 };
+}
+function dailySnapshot() {
+  let save = {};
+  try { save = JSON.parse(localStorage.getItem("animevs-daily-v1")) || {}; } catch (e) {}
+  const today = dayNumber();
+  const doneToday = save.lastResultDay === today;
+  const alive = doneToday || save.lastResultDay === today - 1;
+  return { today, doneToday, streak: alive ? (save.streak || 0) : 0, best: save.best || 0 };
+}
+
+// ─── HOME HUB ───────────────────────────────────────────────────────────────
+function HubIcon({ name }) {
+  const common = { width:22, height:22, viewBox:"0 0 24 24", fill:"none", stroke:"currentColor", strokeWidth:1.8, strokeLinecap:"round", strokeLinejoin:"round", "aria-hidden":true };
+  if (name === "play") return <svg {...common}><path d="M7 4.5v15l12-7.5z" /></svg>;
+  if (name === "roster") return <svg {...common}><circle cx="9" cy="8" r="3.2" /><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6" /><path d="M16 5.2a3 3 0 0 1 0 5.6M18 14.3c1.7.8 3 2.5 3 4.7" /></svg>;
+  if (name === "guides") return <svg {...common}><path d="M4 5.5C4 4.7 4.7 4 5.5 4H11v15H5.5C4.7 19 4 18.3 4 17.5z" /><path d="M20 5.5c0-.8-.7-1.5-1.5-1.5H13v15h5.5c.8 0 1.5-.7 1.5-1.5z" /></svg>;
+  return <svg {...common}><circle cx="12" cy="12" r="8.5" /><path d="M12 11v5.5M12 7.8v.1" /></svg>;
+}
+
+function HubSectionTitle({ children, right }) {
   return (
-    <div className="tIn">
-      <p className="c" style={{ fontSize:15, letterSpacing:"0.1em", color:"#a8a29e", textTransform:"uppercase", marginBottom:20 }}>
-        Choose your mode
-      </p>
-      <div style={{ display:"grid", gridTemplateColumns:"1fr", gap:16 }} className="homeGrid">
-        <style>{`@media(min-width:720px){.homeGrid{grid-template-columns:1fr 1fr!important}}`}</style>
-        {cards.map((c) => (
-          <button key={c.id} onClick={() => setMode(c.id)} className="hov"
-            style={{ textAlign:"left", padding:28, borderRadius:16, cursor:"pointer", color:"#e7e5e4",
-              border:"1px solid rgba(255,255,255,0.12)",
-              background:`linear-gradient(160deg, ${c.accent}22, rgba(255,255,255,0.02) 55%)` }}>
-            <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:12 }}>
-              <div className="a" style={{ fontSize:34, color:"#f5f5f4", lineHeight:1 }}>{c.title}</div>
+    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", margin:"26px 2px 10px" }}>
+      <div className="c" style={{ fontSize:13, textTransform:"uppercase", letterSpacing:"0.22em", color:"#a8a29e", fontWeight:700 }}>{children}</div>
+      {right}
+    </div>
+  );
+}
+
+function Home({ setMode }) {
+  const [profile] = useState(loadProfile);
+  const [daily] = useState(dailySnapshot);
+  const rank = rankFor(profile.xp);
+  const best = Math.min(profile.bestRung, LADDER.length);
+  const champion = best >= LADDER.length;
+  const nextRung = champion ? LADDER[LADDER.length - 1] : LADDER[best];
+  const nextTeam = nextRung.team.map(byId).filter(Boolean);
+  const spot = CHARACTERS[daily.today % CHARACTERS.length];
+  const spotRole = spot.role ? roleById(spot.role) : null;
+  const avgRung = profile.runs ? (profile.reachedSum / profile.runs).toFixed(1) : "–";
+  const firstTime = profile.runs === 0;
+
+  const tiles = [
+    { label:"Runs", value: profile.runs || "–" },
+    { label:"Best rung", value: best ? `${best}/${LADDER.length}` : "–" },
+    { label:"Avg rung", value: avgRung },
+    { label:"Crowns", value: profile.champions || "–" },
+  ];
+
+  return (
+    <div className="tIn hub" style={{ position:"relative", paddingBottom:96 }}>
+      <style>{`
+        @keyframes hubDriftA{0%,100%{transform:translate(-8%,-6%) scale(1)}50%{transform:translate(10%,8%) scale(1.15)}}
+        @keyframes hubDriftB{0%,100%{transform:translate(8%,6%) scale(1.1)}50%{transform:translate(-10%,-8%) scale(.95)}}
+        @keyframes hubPulse{0%,100%{box-shadow:0 0 0 0 rgba(255,45,53,.55)}60%{box-shadow:0 0 0 9px rgba(255,45,53,0)}}
+        @keyframes hubFlame{0%,100%{transform:scale(1) rotate(-2deg)}50%{transform:scale(1.12) rotate(3deg)}}
+        .hubGrid2{display:grid;grid-template-columns:1fr;gap:14px}
+        @media(min-width:720px){.hubGrid2{grid-template-columns:1fr 1fr}}
+        .hubPath::-webkit-scrollbar{display:none}
+        .hubBtn{transition:transform .12s,filter .12s,box-shadow .12s}
+        .hubBtn:hover{transform:translateY(-2px);filter:brightness(1.08)}
+        .hubBtn:active{transform:translateY(1px)}
+        .hubTab{display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 4px;border-radius:12px;text-decoration:none;flex:1;min-width:0}
+        .hubTab:hover{background:rgba(255,255,255,.05)}
+        @media(prefers-reduced-motion:reduce){.hubBlob,.hubNext,.hubFlame{animation:none!important}.hubBtn{transition:none!important}}
+      `}</style>
+
+      {/* ambient backdrop */}
+      <div aria-hidden="true" style={{ position:"fixed", inset:0, pointerEvents:"none", overflow:"hidden", zIndex:0 }}>
+        <div className="hubBlob" style={{ position:"absolute", top:"-10%", left:"-15%", width:"70vmax", height:"70vmax", borderRadius:"50%",
+          background:"radial-gradient(circle, rgba(255,45,53,0.13), transparent 62%)", animation:"hubDriftA 22s ease-in-out infinite" }} />
+        <div className="hubBlob" style={{ position:"absolute", bottom:"-20%", right:"-20%", width:"75vmax", height:"75vmax", borderRadius:"50%",
+          background:"radial-gradient(circle, rgba(168,85,247,0.12), transparent 62%)", animation:"hubDriftB 28s ease-in-out infinite" }} />
+        <div className="a" style={{ position:"absolute", right:"-4%", top:"18%", fontSize:"46vmin", lineHeight:1, color:"rgba(255,255,255,0.02)", transform:"rotate(-8deg)", userSelect:"none" }}>VS</div>
+      </div>
+
+      <div style={{ position:"relative", zIndex:1 }}>
+        {/* tagline + profile strip */}
+        <p className="c" style={{ margin:"-8px 2px 16px", fontSize:16, letterSpacing:"0.18em", textTransform:"uppercase", color:"#a8a29e" }}>
+          Draft seven. Counter the rival. <span style={{ color:RED, fontWeight:700 }}>Climb ten rungs.</span>
+        </p>
+
+        <div style={{ display:"flex", alignItems:"center", gap:14, padding:14, borderRadius:16, border:"1px solid rgba(255,255,255,0.10)", background:"linear-gradient(160deg, rgba(255,255,255,0.06), rgba(255,255,255,0.015))" }}>
+          <div style={{ position:"relative", width:58, height:58, flexShrink:0, borderRadius:"50%",
+            background:`conic-gradient(${RED} ${rank.pct * 3.6}deg, rgba(255,255,255,0.10) 0)`, display:"grid", placeItems:"center" }}>
+            <div className="a" style={{ width:48, height:48, borderRadius:"50%", background:INK, display:"grid", placeItems:"center", fontSize:22, color:"#f5f5f4" }}>
+              {rank.cur.name[0]}
             </div>
-            <p className="c" style={{ fontSize:16, color:"#a8a29e", margin:0, lineHeight:1.4 }}>{c.tagline}</p>
-            <div className="c" style={{ marginTop:16, fontSize:13, letterSpacing:"0.2em", textTransform:"uppercase", color:c.accent, fontWeight:700 }}>
-              Play →
+          </div>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ display:"flex", alignItems:"baseline", gap:8, flexWrap:"wrap" }}>
+              <span className="a" style={{ fontSize:22, color:"#f5f5f4", lineHeight:1.1 }}>{rank.cur.name}</span>
+              <span className="c" style={{ fontSize:13, color:"#a8a29e" }}>{profile.xp} XP</span>
+            </div>
+            <div style={{ height:6, borderRadius:99, background:"rgba(255,255,255,0.10)", margin:"7px 0 5px", overflow:"hidden" }}>
+              <div style={{ width:`${rank.pct}%`, height:"100%", background:RED, borderRadius:99, transition:"width .6s ease" }} />
+            </div>
+            <div className="c" style={{ fontSize:12, color:"#78716c" }}>
+              {rank.next ? `${rank.toNext} XP to ${rank.next.name}` : "Top rank reached"}
+            </div>
+          </div>
+          <div title="Daily puzzle streak" style={{ textAlign:"center", padding:"8px 12px", borderRadius:12, border:"1px solid rgba(251,191,36,0.3)", background:"rgba(251,191,36,0.07)", flexShrink:0 }}>
+            <div className="hubFlame" style={{ fontSize:20, lineHeight:1, animation: daily.streak ? "hubFlame 1.6s ease-in-out infinite" : "none", filter: daily.streak ? "none" : "grayscale(1) opacity(.5)" }}>🔥</div>
+            <div className="a" style={{ fontSize:20, color: daily.streak ? "#fbbf24" : "#57534e", lineHeight:1.1 }}>{daily.streak}</div>
+          </div>
+        </div>
+
+        {/* ladder hero */}
+        <div style={{ marginTop:16, position:"relative", overflow:"hidden", borderRadius:20, padding:"20px 18px 18px",
+          border:"1px solid rgba(255,45,53,0.35)", background:"linear-gradient(150deg, rgba(255,45,53,0.24), rgba(60,10,14,0.55) 55%, rgba(11,12,16,0.9))" }}>
+          <div className="a" aria-hidden="true" style={{ position:"absolute", right:-8, top:-22, fontSize:120, lineHeight:1, color:"rgba(255,255,255,0.045)", userSelect:"none" }}>{String(nextRung.rung).padStart(2, "0")}</div>
+          <div style={{ position:"relative" }}>
+            <div className="c" style={{ fontSize:12, letterSpacing:"0.24em", textTransform:"uppercase", color:"#fecaca", fontWeight:700 }}>
+              {champion ? "The ladder · defend your crown" : firstTime ? "The ladder · start here" : `The ladder · rung ${nextRung.rung} of ${LADDER.length}`}
+            </div>
+            <div className="a" style={{ fontSize:34, lineHeight:1.05, margin:"6px 0 2px", color:"#fff" }}>{nextRung.title}</div>
+            <div className="c" style={{ fontSize:15, color:"#e7c8ca" }}>
+              {nextRung.universe} · opponent strength ×{nextRung.boost.toFixed(2)}
+            </div>
+
+            {/* rung path */}
+            <div className="hubPath" style={{ display:"flex", alignItems:"center", margin:"16px -4px 4px", padding:"6px 4px", overflowX:"auto", scrollbarWidth:"none" }}>
+              {LADDER.map((r, i) => {
+                const cleared = r.rung <= best;
+                const isNext = !champion && r.rung === best + 1;
+                return (
+                  <React.Fragment key={r.rung}>
+                    <div title={`Rung ${r.rung}: ${r.title} (${r.universe})`} className={isNext ? "hubNext" : ""}
+                      style={{ flex:"0 1 28px", minWidth:20, aspectRatio:"1", boxSizing:"border-box", borderRadius:"50%", display:"grid", placeItems:"center", fontSize:12, fontWeight:800,
+                        fontFamily:"'Barlow Condensed',sans-serif",
+                        background: cleared ? RED : isNext ? "rgba(255,45,53,0.18)" : "rgba(0,0,0,0.35)",
+                        border: cleared ? `2px solid ${RED}` : isNext ? `2px solid ${RED}` : "2px solid rgba(255,255,255,0.14)",
+                        color: cleared ? "#fff" : isNext ? "#fecaca" : "#78716c",
+                        animation: isNext ? "hubPulse 1.8s ease-out infinite" : "none" }}>
+                      {cleared ? "✓" : r.rung}
+                    </div>
+                    {i < LADDER.length - 1 && <div style={{ flex:"1 1 3px", minWidth:3, height:2, background: r.rung < best + (champion ? 1 : 0) ? RED : "rgba(255,255,255,0.12)" }} />}
+                  </React.Fragment>
+                );
+              })}
+            </div>
+
+            {/* opponent squad preview */}
+            <div style={{ marginTop:12, padding:"10px 12px", borderRadius:12, background:"rgba(0,0,0,0.38)", border:"1px solid rgba(255,255,255,0.08)" }}>
+              <div className="c" style={{ fontSize:11, letterSpacing:"0.2em", textTransform:"uppercase", color:"#a8a29e", marginBottom:6 }}>Their squad</div>
+              <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+                {nextTeam.slice(0, 5).map((c) => (
+                  <span key={c.id} className="c" style={{ display:"inline-flex", alignItems:"center", gap:5, fontSize:13, fontWeight:700, color:"#e7e5e4", padding:"3px 8px 3px 5px", borderRadius:8, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.10)" }}>
+                    <TierBadge tier={c.tier} small />{c.name}
+                  </span>
+                ))}
+                {nextTeam.length > 5 && <span className="c" style={{ fontSize:13, color:"#a8a29e", alignSelf:"center" }}>+{nextTeam.length - 5} more</span>}
+              </div>
+            </div>
+
+            <div style={{ display:"flex", gap:10, marginTop:16 }}>
+              <button onClick={() => setMode("spin")} className="a hubBtn"
+                style={{ flex:1, padding:"14px 10px", fontSize:20, letterSpacing:"0.04em", borderRadius:12, border:"none", cursor:"pointer", background:"#fff", color:INK, boxShadow:"0 4px 0 #b9b9b9" }}>
+                ▶ SPIN
+              </button>
+              <button onClick={() => setMode("draft")} className="a hubBtn"
+                style={{ flex:1, padding:"14px 10px", fontSize:20, letterSpacing:"0.04em", borderRadius:12, border:"1px solid rgba(255,255,255,0.28)", cursor:"pointer", background:"rgba(255,255,255,0.10)", color:"#fff", boxShadow:"0 4px 0 rgba(0,0,0,0.35)" }}>
+                DRAFT
+              </button>
+            </div>
+            <div className="c" style={{ fontSize:12, color:"#d4a5a8", marginTop:10 }}>
+              Spin: take what the reel gives you. Draft: five draws per pick on a 50-credit budget.
+            </div>
+          </div>
+        </div>
+
+        {/* versus + daily */}
+        <HubSectionTitle>Play someone</HubSectionTitle>
+        <div className="hubGrid2">
+          <button onClick={() => setMode("pvp")} className="hubBtn"
+            style={{ textAlign:"left", cursor:"pointer", color:"#fff", padding:"18px 18px", borderRadius:18, border:"1px solid rgba(255,255,255,0.14)",
+              background:"linear-gradient(120deg, #4f2bd6 0%, #a855f7 55%, #ec4899 100%)", position:"relative", overflow:"hidden" }}>
+            <div className="a" aria-hidden="true" style={{ position:"absolute", right:10, top:-6, fontSize:78, lineHeight:1, color:"rgba(255,255,255,0.14)" }}>VS</div>
+            <div style={{ position:"relative" }}>
+              <div className="a" style={{ fontSize:26, lineHeight:1.1 }}>Challenge a friend</div>
+              <div className="c" style={{ fontSize:15, color:"#f3e8ff", margin:"4px 0 10px", maxWidth:300 }}>Live two-player rooms. Build blind, or bid against your rival in an auction.</div>
+              <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+                {["Blind draft", "Live auction · $50"].map((t) => (
+                  <span key={t} className="c" style={{ fontSize:12, fontWeight:700, letterSpacing:"0.08em", textTransform:"uppercase", padding:"3px 9px", borderRadius:99, background:"rgba(0,0,0,0.28)", border:"1px solid rgba(255,255,255,0.25)" }}>{t}</span>
+                ))}
+              </div>
             </div>
           </button>
-        ))}
-      </div>
-      <div style={{ marginTop:24, padding:16, borderRadius:12, border:"1px solid rgba(255,255,255,0.08)", background:"rgba(255,255,255,0.02)" }}>
-        <div className="c" style={{ fontSize:13, textTransform:"uppercase", letterSpacing:"0.2em", color:RED, fontWeight:700, marginBottom:8 }}>The seven roles</div>
-        <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
-          {ROLES.map((r) => (
-            <div key={r.id} style={{ display:"flex", alignItems:"center", gap:6, padding:"5px 10px", borderRadius:8, background:"rgba(0,0,0,0.35)", border:`1px solid ${r.color}55` }}>
-              <span style={{ height:8, width:8, borderRadius:99, background:r.color }} />
-              <span className="c" style={{ fontWeight:700, fontSize:14, color:"#e7e5e4" }}>{r.name}</span>
-              <span className="c" style={{ fontSize:12, color:"#a8a29e" }}>· {r.blurb}</span>
+
+          <button onClick={() => setMode("daily")} className="hubBtn"
+            style={{ textAlign:"left", cursor:"pointer", color:"#e7e5e4", padding:"18px 18px", borderRadius:18,
+              border:`1px solid ${daily.doneToday ? "rgba(34,197,94,0.4)" : "rgba(251,191,36,0.4)"}`,
+              background:`linear-gradient(150deg, ${daily.doneToday ? "rgba(34,197,94,0.14)" : "rgba(251,191,36,0.16)"}, rgba(255,255,255,0.02) 70%)` }}>
+            <div className="c" style={{ fontSize:12, letterSpacing:"0.22em", textTransform:"uppercase", color: daily.doneToday ? "#86efac" : "#fcd34d", fontWeight:700 }}>
+              Daily puzzle #{daily.today}
+            </div>
+            <div className="a" style={{ fontSize:26, lineHeight:1.1, margin:"5px 0 4px", color:"#f5f5f4" }}>
+              {daily.doneToday ? "Done for today ✓" : "Who's the mystery fighter?"}
+            </div>
+            <div className="c" style={{ fontSize:15, color:"#a8a29e" }}>
+              {daily.doneToday ? "Come back tomorrow for a new one." : "Seven guesses. Same puzzle for everyone, every day."}
+            </div>
+            <div className="c" style={{ marginTop:10, fontSize:13, color:"#fbbf24", fontWeight:700 }}>
+              {daily.streak ? `🔥 ${daily.streak}-day streak` : "Start a streak"}{daily.best > 1 ? ` · best ${daily.best}` : ""}
+            </div>
+          </button>
+        </div>
+
+        {/* record */}
+        <HubSectionTitle right={<span className="c" style={{ fontSize:12, color:"#57534e" }}>saved on this device</span>}>Your record</HubSectionTitle>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(4, 1fr)", gap:8 }}>
+          {tiles.map((t) => (
+            <div key={t.label} style={{ textAlign:"center", padding:"12px 4px", borderRadius:14, border:"1px solid rgba(255,255,255,0.09)", background:"rgba(255,255,255,0.03)" }}>
+              <div className="a" style={{ fontSize:24, lineHeight:1.1, color: t.value === "–" ? "#57534e" : "#f5f5f4" }}>{t.value}</div>
+              <div className="c" style={{ fontSize:11, letterSpacing:"0.14em", textTransform:"uppercase", color:"#a8a29e", marginTop:3 }}>{t.label}</div>
             </div>
           ))}
         </div>
-        <p className="c" style={{ fontSize:13, color:"#78716c", margin:"10px 0 0" }}>
-          Fit a character's tags to its role for a bonus. Force a misfit and they underperform.
-        </p>
-      </div>
-      <nav aria-label="Guides and site info" style={{ marginTop:20, padding:16, borderRadius:12, border:"1px solid rgba(255,255,255,0.08)", background:"rgba(255,255,255,0.02)" }}>
-        <div className="c" style={{ fontSize:13, textTransform:"uppercase", letterSpacing:"0.2em", color:RED, fontWeight:700, marginBottom:8 }}>Guides &amp; strategy</div>
-        <div style={{ display:"flex", flexWrap:"wrap", gap:"6px 16px" }}>
-          {[["/guides/how-to-play","How to play"],["/guides/scoring","How scoring works"],["/guides/counters","Counters"],["/guides/ladder","Ladder guide"],["/guides/budget-strategy","Budget strategy"],["/characters","Character database"]].map(([href,label]) => (
-            <a key={href} href={href} className="c" style={{ color:"#e7e5e4", fontSize:15, fontWeight:600, textDecoration:"underline", textUnderlineOffset:3 }}>{label}</a>
-          ))}
-        </div>
-        <div style={{ display:"flex", flexWrap:"wrap", gap:"6px 16px", marginTop:12 }}>
-          {[["/about","About"],["/privacy","Privacy"],["/contact","Contact"]].map(([href,label]) => (
-            <a key={href} href={href} className="c" style={{ color:"#a8a29e", fontSize:13 }}>{label}</a>
-          ))}
-        </div>
-      </nav>
+        {firstTime && <p className="c" style={{ fontSize:13, color:"#78716c", margin:"8px 2px 0" }}>Finish a Spin or Draft run and your rank, best rung and averages start filling in here.</p>}
 
+        {/* spotlight */}
+        <HubSectionTitle right={<a href="/characters" className="c" style={{ fontSize:13, color:"#fca5a5", textDecoration:"none", fontWeight:700 }}>All {CHARACTERS.length} fighters →</a>}>Fighter spotlight</HubSectionTitle>
+        <div style={{ padding:16, borderRadius:18, border:"1px solid rgba(255,255,255,0.12)", background:"linear-gradient(160deg, rgba(255,255,255,0.06), rgba(255,255,255,0.015))", display:"flex", gap:14, alignItems:"flex-start" }}>
+          <div className="a" style={{ flexShrink:0, width:64, height:84, borderRadius:12, display:"grid", placeItems:"center", fontSize:34, color:INK,
+            background:`linear-gradient(160deg, ${TIER_COLOR[spot.tier] || "#a8a29e"}, ${TIER_COLOR[spot.tier] || "#a8a29e"}88)`, boxShadow:`0 8px 24px -10px ${TIER_COLOR[spot.tier] || "#a8a29e"}` }}>
+            {spot.name[0]}
+          </div>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
+              <TierBadge tier={spot.tier} />
+              <span className="a" style={{ fontSize:24, color:"#f5f5f4", lineHeight:1.1 }}>{spot.name}</span>
+              <span className="c" style={{ fontSize:15, color:"#a8a29e" }}>{spot.rating}</span>
+            </div>
+            <div className="c" style={{ fontSize:14, color:"#a8a29e", margin:"2px 0 8px" }}>
+              {spot.series} · {spot.cost} credits{spotRole ? <> · best as <span style={{ color:spotRole.color, fontWeight:700 }}>{spotRole.name}</span></> : null}
+            </div>
+            <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginBottom:8 }}>{spot.tags.slice(0, 6).map((t) => <Tag key={t} t={t} small />)}</div>
+            <AbilityChip ability={spot.ability} small />
+          </div>
+        </div>
+
+        {/* roles */}
+        <HubSectionTitle>The seven roles</HubSectionTitle>
+        <div style={{ padding:16, borderRadius:14, border:"1px solid rgba(255,255,255,0.08)", background:"rgba(255,255,255,0.02)" }}>
+          <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
+            {ROLES.map((r) => (
+              <div key={r.id} style={{ display:"flex", alignItems:"center", gap:6, padding:"5px 10px", borderRadius:8, background:"rgba(0,0,0,0.35)", border:`1px solid ${r.color}55` }}>
+                <span style={{ height:8, width:8, borderRadius:99, background:r.color }} />
+                <span className="c" style={{ fontWeight:700, fontSize:14, color:"#e7e5e4" }}>{r.name}</span>
+                <span className="c" style={{ fontSize:12, color:"#a8a29e" }}>· {r.blurb}</span>
+              </div>
+            ))}
+          </div>
+          <p className="c" style={{ fontSize:13, color:"#78716c", margin:"10px 0 0" }}>
+            Fit a character's tags to its role for a bonus. Force a misfit and they underperform.
+          </p>
+        </div>
+
+        {/* guides */}
+        <HubSectionTitle>Guides &amp; strategy</HubSectionTitle>
+        <nav aria-label="Guides and site info" style={{ padding:16, borderRadius:14, border:"1px solid rgba(255,255,255,0.08)", background:"rgba(255,255,255,0.02)" }}>
+          <div style={{ display:"flex", flexWrap:"wrap", gap:"6px 16px" }}>
+            {[["/guides/how-to-play","How to play"],["/guides/scoring","How scoring works"],["/guides/counters","Counters"],["/guides/ladder","Ladder guide"],["/guides/budget-strategy","Budget strategy"],["/characters","Character database"]].map(([href, label]) => (
+              <a key={href} href={href} className="c" style={{ color:"#e7e5e4", fontSize:15, fontWeight:600, textDecoration:"underline", textUnderlineOffset:3 }}>{label}</a>
+            ))}
+          </div>
+          <div style={{ display:"flex", flexWrap:"wrap", gap:"6px 16px", marginTop:12 }}>
+            {[["/about","About"],["/privacy","Privacy"],["/contact","Contact"]].map(([href, label]) => (
+              <a key={href} href={href} className="c" style={{ color:"#a8a29e", fontSize:13 }}>{label}</a>
+            ))}
+          </div>
+        </nav>
+      </div>
+
+      {/* bottom tab bar */}
+      <div style={{ position:"fixed", left:0, right:0, bottom:0, zIndex:40, background:"rgba(11,12,16,0.94)", backdropFilter:"blur(8px)", WebkitBackdropFilter:"blur(8px)", borderTop:"1px solid rgba(255,255,255,0.10)" }}>
+        <div style={{ maxWidth:1024, margin:"0 auto", display:"flex", padding:"4px 12px calc(4px + env(safe-area-inset-bottom, 0px))" }}>
+          {[["play","Play","#",true],["roster","Roster","/characters"],["guides","Guides","/guides"],["about","About","/about"]].map(([icon, label, href, active]) => (
+            <a key={label} href={href} className="hubTab c"
+              onClick={active ? (e) => { e.preventDefault(); try { window.scrollTo({ top:0, behavior:"smooth" }); } catch (err) {} } : undefined}
+              style={{ color: active ? RED : "#a8a29e", background: active ? "rgba(255,45,53,0.10)" : "transparent" }}>
+              <HubIcon name={icon} />
+              <span style={{ fontSize:12, fontWeight:700, letterSpacing:"0.06em" }}>{label}</span>
+            </a>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -1871,6 +2139,9 @@ function ClimbResult({ team, onReplay, replayLabel }) {
   }, [team]);
   const { rungs, reached, champion } = run;
   const [phase, setPhase] = useState("battle"); // battle | results
+  React.useEffect(() => {
+    recordRun({ key: team.map((m) => m.character.id).join("|"), reached, champion, kind: replayLabel === "NEW SPIN" ? "spin" : replayLabel === "NEW DRAFT" ? "draft" : "" });
+  }, [run]);
   const [copied, setCopied] = useState(false);
 
   if (phase === "battle") {
