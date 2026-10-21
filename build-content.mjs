@@ -18,7 +18,7 @@ import os from "node:os";
 import { pathToFileURL } from "node:url";
 
 const SITE = {
-  url: "https://animevs.vercel.app",   // change when you move to a custom domain
+  url: "https://www.animevs.app",   // your live custom domain (animevs.vercel.app redirects here)
   name: "animeVS",
   adClient: "ca-pub-1027225143628108", // AdSense publisher ID
   adSlot: "",                          // paste your ad-unit slot ID here once AdSense approves you. Empty = no ads anywhere.
