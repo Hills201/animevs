@@ -196,7 +196,7 @@ export default function DailyGame({ characters }) {
   const shareText = useMemo(() => {
     const head = `animeVS Daily #${today} ${won ? guesses.length : "X"}/${GUESSES}`;
     const grid = guesses.map((g) => compare(g, answer).map((c) => stateGlyph(c.state)).join("")).join("\n");
-    return `${head}\n${grid}\nanimevs.vercel.app`;
+    return `${head}\n${grid}\nwww.animevs.app`;
   }, [guesses, answer, won, today]);
 
   const share = async () => {
