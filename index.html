@@ -18,6 +18,10 @@
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
     <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png" />
+    <!-- Fonts load from the page head (discovered immediately, not after React starts). display=swap keeps text visible while they arrive. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Barlow:wght@400;600;700;800&family=Barlow+Condensed:wght@600;700;800&display=swap" />
     <style>
       html, body, #root { margin: 0; padding: 0; background: #0b0c10; min-height: 100%; }
       * { -webkit-tap-highlight-color: transparent; }
