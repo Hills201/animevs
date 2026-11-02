@@ -1,5 +1,10 @@
 # Changelog
 
+## New guides (2 November 2026)
+- Three new generated guides: `/guides/tier-list` (best picks per role, clutch picks), `/guides/synergy` (every pair, groups of three, single-anime ladder test) and `/guides/auction-strategy` (exact rules, fair prices from 400 seeded simulated auctions).
+- New dated `/updates` page; every guide shows an "Updated" date (edit `PAGE_DATES` in `build-content.mjs` when you change a page).
+- New pages linked from the home screen, the crawlable intro in `index.html`, the guides hub, the footer and the sitemap.
+
 ## Motion + speed pass
 - Added **GSAP** (entrances, battle/results sequences, scroll reveals, parallax), **Lenis** (smooth wheel scrolling, desktop mouse/trackpad only) and **React Bits** components (SpotlightCard, ShinyText, Magnet, SplitText, CountUp). Licence: React Bits is MIT + Commons Clause, (c) David Haz; attribution kept in `src/reactbits.jsx` and `src/SplitText.jsx`.
 - All motion is skipped for `prefers-reduced-motion`; phones keep native scrolling.
