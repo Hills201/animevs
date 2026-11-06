@@ -6,6 +6,7 @@ import { SpotlightCard, ShinyText, Magnet, CountUp } from "./reactbits.jsx";
 // Code-split: these only download when the player opens them. Versus carries the
 // Supabase client; Daily carries the facts database. Home stays small and fast.
 const VersusMode = lazy(() => import("./Versus.jsx"));
+import SupportPopup from "./SupportPopup.jsx";
 const DailyGame = lazy(() => import("./DailyGame.jsx"));
 // React Bits SplitText pulls in GSAP's ScrollTrigger + SplitText plugins, so it loads on demand (battle screen).
 const SplitText = lazy(() => import("./SplitText.jsx"));
@@ -1659,6 +1660,7 @@ function Home({ setMode }) {
 
   return (
     <div ref={root} className="hub" style={{ position:"relative", paddingBottom:96 }}>
+      <SupportPopup variant="entry" />
       <style>{`
         @keyframes hubDriftA{0%,100%{transform:translate(-8%,-6%) scale(1)}50%{transform:translate(10%,8%) scale(1.15)}}
         @keyframes hubDriftB{0%,100%{transform:translate(8%,6%) scale(1.1)}50%{transform:translate(-10%,-8%) scale(.95)}}
@@ -2179,56 +2181,6 @@ function SharedResultView({ setMode }) {
   );
 }
 
-const SUPPORT_KEY = "avs_support_until";
-function SupportPopup() {
-  const [open, setOpen] = useState(false);
-  React.useEffect(() => {
-    let blocked = false;
-    try {
-      if (sessionStorage.getItem("avs_support_seen")) blocked = true;
-      if (Date.now() < Number(localStorage.getItem(SUPPORT_KEY) || 0)) blocked = true;
-    } catch (e) {}
-    if (blocked) return;
-    const t = setTimeout(() => setOpen(true), 1600);
-    return () => clearTimeout(t);
-  }, []);
-  function close(days) {
-    setOpen(false);
-    try {
-      sessionStorage.setItem("avs_support_seen", "1");
-      localStorage.setItem(SUPPORT_KEY, String(Date.now() + days * 864e5));
-    } catch (e) {}
-  }
-  React.useEffect(() => {
-    if (!open) return;
-    const onKey = (e) => { if (e.key === "Escape") close(3); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open]);
-  if (!open) return null;
-  return (
-    <div onClick={() => close(3)} style={{ position:"fixed", inset:0, zIndex:80, display:"flex", alignItems:"center", justifyContent:"center", padding:16, background:"rgba(5,5,8,0.72)", backdropFilter:"blur(4px)" }}>
-      <div role="dialog" aria-modal="true" aria-label="Support animeVS" onClick={(e) => e.stopPropagation()} className="slam"
-        style={{ position:"relative", width:"100%", maxWidth:380, boxSizing:"border-box", textAlign:"center", borderRadius:16, padding:"28px 22px 20px",
-          border:"1px solid rgba(255,45,53,0.4)", background:"linear-gradient(160deg,#1f1013,#0b0c10 65%)", boxShadow:"0 24px 70px -20px rgba(255,45,53,0.45)" }}>
-        <button onClick={() => close(3)} aria-label="Close" style={{ position:"absolute", top:8, right:10, width:32, height:32, border:"none", background:"transparent", color:"#78716c", fontSize:22, cursor:"pointer" }}>×</button>
-        <div style={{ fontSize:34, marginBottom:6 }}>☕</div>
-        <div className="a" style={{ fontSize:26, color:"#f5f5f4", marginBottom:8 }}>Enjoying animeVS?</div>
-        <p className="c" style={{ color:"#a8a29e", fontSize:15, lineHeight:1.5, margin:"0 0 18px" }}>
-          It's free and built by one person, and there are so many ideas and improvements still coming: new characters, modes and more. If you can, a small tip helps keep it going. Thank you!
-        </p>
-        <a href="https://ko-fi.com/animevs" target="_blank" rel="noopener noreferrer" onClick={() => close(14)} className="a redBtn"
-          style={{ display:"block", padding:"13px 16px", borderRadius:10, background:RED, color:"#fff", textDecoration:"none", fontSize:18, letterSpacing:"0.03em" }}>
-          Support on Ko-fi
-        </a>
-        <button onClick={() => close(3)} className="c" style={{ marginTop:10, padding:"8px 12px", border:"none", background:"transparent", color:"#78716c", fontSize:14, cursor:"pointer" }}>
-          Maybe later
-        </button>
-      </div>
-    </div>
-  );
-}
-
 function ClimbResult({ team, onReplay, replayLabel }) {
   const run = useMemo(() => {
     let reached = 0;
@@ -2273,7 +2225,7 @@ function ClimbResult({ team, onReplay, replayLabel }) {
 
   return (
     <div ref={resRef} style={{ maxWidth:640, margin:"0 auto" }}>
-      <SupportPopup />
+      <SupportPopup variant="run" />
       <div className="slam" style={{ position:"relative", overflow:"hidden", borderRadius:16, padding:32, marginBottom:20,
         border: champion?`1px solid ${RED}`:"1px solid rgba(255,255,255,0.12)",
         background: champion?"linear-gradient(160deg,#2a1608,#0b0c10 60%)":"linear-gradient(160deg,#17181d,#0b0c10 60%)" }}>

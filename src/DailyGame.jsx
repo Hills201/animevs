@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
+import SupportPopup from "./SupportPopup.jsx";
 import {
   COLUMNS, GUESSES, compare, factsFor, dailyCharacter, dayNumber, msUntilTomorrow,
 } from "./animeFacts.js";
@@ -178,6 +179,7 @@ export default function DailyGame({ characters }) {
   const won = guesses.some((g) => g.id === answer.id);
   const out = !won && guesses.length >= GUESSES;
   const done = won || out;
+  const doneOnLoad = useRef(done);
 
   const commit = (nextIds) => {
     setGuessIds(nextIds);
@@ -271,6 +273,7 @@ export default function DailyGame({ characters }) {
         </div>
       )}
 
+      {done && !doneOnLoad.current && <SupportPopup variant="run" />}
       {done && (
         <div style={{ marginTop:18, padding:18, borderRadius:14,
           border:`1px solid ${won ? `${HIT}55` : "rgba(255,255,255,0.14)"}`,

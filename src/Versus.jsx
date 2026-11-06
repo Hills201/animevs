@@ -3,6 +3,7 @@
 // Versus or follows a ?room= link, so it never slows down the home screen.
 import React, { useState, useEffect, useRef } from "react";
 import { supabase, supabaseConfigured } from "./supabaseClient.js";
+import SupportPopup from "./SupportPopup.jsx";
 import {
   AUCTION_BUDGET,
   AUCTION_MIN_BID,
@@ -481,6 +482,7 @@ function PvpMode() {
       )}
 
       {/* Result */}
+      {result && <SupportPopup variant="run" />}
       {result && (
         <div className="slam" style={{ borderRadius:16, overflow:"hidden", marginBottom:18, border:tie?"1px solid rgba(255,255,255,0.2)":`1px solid ${iWon?"#22c55e":"#ef4444"}` }}>
           <div style={{ textAlign:"center", padding:"24px 20px", background: tie?"rgba(255,255,255,0.03)":iWon?"linear-gradient(160deg,#0f3d2e,#0b0c10 60%)":"linear-gradient(160deg,#3d0f14,#0b0c10 60%)" }}>
@@ -852,6 +854,7 @@ function AuctionMode({ onExit }) {
     const tie = !forfeit && result.winner === "tie";
     return (
       <div className="tIn" style={{ maxWidth: 680, margin: "0 auto" }}>
+        <SupportPopup variant="run" />
         <div style={{ ...panel, padding: 18, marginBottom: 18 }}>
           <div className="a" style={{ fontSize: 24, color: "#f5f5f4" }}>AUCTION COMPLETE</div>
           <div className="c" style={{ fontSize: 13, color: "#a8a29e", marginTop: 4 }}>
