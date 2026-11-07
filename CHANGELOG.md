@@ -1,5 +1,14 @@
 # Changelog
 
+## Signature roles always perfect fit (7 November 2026)
+- `roleFit` now treats a fighter's signature role as at least 2 matching tags, so it is always "Perfect fit · Signature" (+25). 56 of 156 fighters were only a good fit or no match before.
+- Guide text (in-game and generated pages) updated to match.
+- Ladder opponents also gain from this, so rung 6 boost 0.819 -> 0.781; random legal teams still average about 5.4 rungs, no full clears, healthcheck passes.
+
+## Easier ladder (7 November 2026)
+- Every ladder boost multiplied by 0.93 (rung 1: 0.664 up to rungs 9-10: 0.941). Random legal teams now average about 5.3 rungs instead of 4.2; full clears stay rare. Healthcheck still passes (top team clears 10/10).
+- Ladder and scoring guides and the Updates page show the new numbers and date automatically.
+
 ## New guides (2 November 2026)
 - Three new generated guides: `/guides/tier-list` (best picks per role, clutch picks), `/guides/synergy` (every pair, groups of three, single-anime ladder test) and `/guides/auction-strategy` (exact rules, fair prices from 400 seeded simulated auctions).
 - New dated `/updates` page; every guide shows an "Updated" date (edit `PAGE_DATES` in `build-content.mjs` when you change a page).

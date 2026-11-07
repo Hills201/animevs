@@ -136,10 +136,10 @@ function adUnit() {
 }
 // Dates shown under each page title. Bump a page's date when you change its writing.
 const PAGE_DATES = {
-  "/guides": "2 November 2026", "/guides/how-to-play": "13 October 2026", "/guides/scoring": "13 October 2026",
-  "/guides/counters": "13 October 2026", "/guides/ladder": "13 October 2026", "/guides/budget-strategy": "13 October 2026",
+  "/guides": "2 November 2026", "/guides/how-to-play": "13 October 2026", "/guides/scoring": "7 November 2026",
+  "/guides/counters": "13 October 2026", "/guides/ladder": "7 November 2026", "/guides/budget-strategy": "13 October 2026",
   "/guides/tier-list": "2 November 2026", "/guides/synergy": "2 November 2026", "/guides/auction-strategy": "2 November 2026",
-  "/characters": "2 November 2026", "/updates": "2 November 2026",
+  "/characters": "2 November 2026", "/updates": "7 November 2026",
 };
 function shell({ file, canonical, title, description, body, wide = false, active = "" }) {
   const dated = PAGE_DATES[canonical];
@@ -286,7 +286,7 @@ shell({
 ${table(["Matching tags", "Result", "Bonus"], [["2 or more", "Perfect fit", "+15"], ["1", "Good fit", "+5"], ["0", "Misfit", "+0"]], ["", "", "n"])}
 <p>A misfit is never punished. It just misses out on the bonus.</p>
 <h2>3. Signature role</h2>
-<p>Every fighter has one role they are known for. Place them there and they earn a further <b>+10</b>, stacking with tag fit. Even a fighter whose tags don't match still gets the +10 in their signature role. A fighter in their signature role with two or more matching tags earns <b>+25</b> over their base rating.</p>
+<p>Every fighter has one role they are known for. Place them there and it always counts as a perfect fit, whatever their tags say, plus a further <b>+10</b>. That is <b>+25</b> over their base rating, every time. Anywhere else, the normal tag-fit rules apply.</p>
 <div class="box"><b>Worked example: ${esc(exChar.name)}</b> (${esc(exChar.series)}, rating ${exChar.rating}, signature role ${esc(roleName(exChar.role))}).
 <ul>
 <li>In <b>${esc(exBest.r.name)}</b>: ${exBest.fit.label.toLowerCase()}, ${exBest.fit.bonus >= 0 ? "+" : ""}${exBest.fit.bonus} on top of ${exChar.rating} = <b>${exBest.total}</b>.</li>
@@ -854,6 +854,14 @@ ${autoFilled ? `<li>${Math.round(100 * autoFilled / players)}% of players ended 
 // ════════════════════════════════════════════════════════════════════════════
 {
   const UPDATES = [
+    ["7 November 2026", "Signature roles are always a perfect fit", [
+      "A fighter placed in their signature role now always counts as a <a href=\"/guides/scoring\">perfect fit</a>, plus the +10 signature bonus. Before, 56 of the 156 fighters only got a good fit or no tag match there, which looked wrong for their best role.",
+      "Opponent teams on the ladder benefit too, so rung 6 was re-tuned to keep the overall difficulty about the same.",
+    ]],
+    ["7 November 2026", "Easier ladder", [
+      "The solo ladder is gentler. Every opponent's strength boost is about 7 percent lower, so mid-ladder rungs are much more winnable. See the new numbers on the <a href=\"/guides/ladder\">ladder guide</a>.",
+      "The final rungs are still tough. They need a well-built team with good role fits and synergy.",
+    ]],
     ["2 November 2026", "New strategy guides", [
       "Added a <a href=\"/guides/tier-list\">tier list with the best picks for every role</a>, including budget picks and clutch fighters for rungs 6 to 10.",
       "Added a <a href=\"/guides/synergy\">synergy guide</a> covering every pair, the groups of three, and a test of single-anime teams on the ladder.",
