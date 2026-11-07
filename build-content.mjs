@@ -856,11 +856,7 @@ ${autoFilled ? `<li>${Math.round(100 * autoFilled / players)}% of players ended 
   const UPDATES = [
     ["7 November 2026", "Signature roles are always a perfect fit", [
       "A fighter placed in their signature role now always counts as a <a href=\"/guides/scoring\">perfect fit</a>, plus the +10 signature bonus. Before, 56 of the 156 fighters only got a good fit or no tag match there, which looked wrong for their best role.",
-      "Opponent teams on the ladder benefit too, so rung 6 was re-tuned to keep the overall difficulty about the same.",
-    ]],
-    ["7 November 2026", "Easier ladder", [
-      "The solo ladder is gentler. Every opponent's strength boost is about 7 percent lower, so mid-ladder rungs are much more winnable. See the new numbers on the <a href=\"/guides/ladder\">ladder guide</a>.",
-      "The final rungs are still tough. They need a well-built team with good role fits and synergy.",
+      "Opponent teams on the ladder benefit too, since they are placed in the roles that suit them best.",
     ]],
     ["2 November 2026", "New strategy guides", [
       "Added a <a href=\"/guides/tier-list\">tier list with the best picks for every role</a>, including budget picks and clutch fighters for rungs 6 to 10.",
