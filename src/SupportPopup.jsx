@@ -1,13 +1,14 @@
 import React, { useEffect, useState } from "react";
 
 // Ko-fi support popup. variant "entry" = first visit, "run" = after a finished run.
-// Caps: entry at most once a week; a run popup at most once per 10 min across all
+// Caps: entry at most once every 5 hours (counted from when it appears); a run popup at most once per 10 min across all
 // popups; 14 days of quiet after someone taps through to Ko-fi. Never shown to bots.
 const RED = "#ff2d35";
 const K_ENTRY = "avs_support_entry_until";
 const K_LAST = "avs_support_last_shown";
 const K_CLICK = "avs_support_click_until";
 const DAY = 864e5;
+const ENTRY_EVERY = 5 * 36e5; // entry popup: at most once every 5 hours
 
 function read(k) { try { return Number(localStorage.getItem(k) || 0); } catch (e) { return 0; } }
 function write(k, v) { try { localStorage.setItem(k, String(v)); } catch (e) {} }
@@ -41,13 +42,16 @@ export default function SupportPopup({ variant = "run" }) {
     if (isBot() || now < read(K_CLICK)) return undefined;
     if (variant === "entry" && now < read(K_ENTRY)) return undefined;
     if (now - read(K_LAST) < 10 * 60 * 1000) return undefined;
-    const t = setTimeout(() => { write(K_LAST, Date.now()); setOpen(true); }, c.delay);
+    const t = setTimeout(() => {
+      write(K_LAST, Date.now());
+      if (variant === "entry") write(K_ENTRY, Date.now() + ENTRY_EVERY);
+      setOpen(true);
+    }, c.delay);
     return () => clearTimeout(t);
   }, [variant, c.delay]);
 
   function close(clicked) {
     setOpen(false);
-    if (variant === "entry") write(K_ENTRY, Date.now() + 7 * DAY);
     if (clicked) write(K_CLICK, Date.now() + 14 * DAY);
   }
 
