@@ -129,17 +129,31 @@ for (const rung of LADDER) {
 let dailyLine = "not present";
 if (FACTS) {
   for (const p of FACTS.validateFacts(CHARACTERS)) fail("daily facts: " + p);
-  // Every character must be reachable as an answer, and the cycle must not
-  // repeat anyone inside one full rotation.
-  const seen = new Set();
-  let repeats = 0;
-  for (let d = 0; d < CHARACTERS.length; d++) {
-    const c = FACTS.dailyCharacter(CHARACTERS, new Date(Date.now() + d * 86400000));
-    if (seen.has(c.id)) repeats++;
-    seen.add(c.id);
+  // The rotation. Once every listed fighter has joined, a cycle must contain
+  // each of them exactly once.
+  const DAY = 86400000, N = CHARACTERS.length;
+  const settled = FACTS.dailyCycle(CHARACTERS, new Date(Date.now() + 3 * N * DAY));
+  const seen = new Set(settled.order.map((c) => c && c.id));
+  if (settled.order.length !== seen.size) fail("daily: a fighter appears twice inside one cycle");
+  if (seen.size !== N || settled.order.some((c) => !c)) fail(`daily: only ${seen.size}/${N} characters can ever be the answer`);
+  // Adding a fighter must not disturb the schedule: every puzzle up to the end
+  // of the cycle in progress stays the same, the next cycle is the old order
+  // with the newcomer on the end, and so nobody repeats early.
+  const now = new Date();
+  const ghost = { ...CHARACTERS[0], id: "healthcheck-ghost", name: "Ghost" };
+  const grown = [ghost, ...CHARACTERS];   // put first on purpose: roster order must not matter
+  const added = [...FACTS.DAILY_ADDED, ["healthcheck-ghost", now.toISOString().slice(0, 10)]];
+  const cur = FACTS.dailyCycle(CHARACTERS, now);
+  let moved = 0;
+  for (let d = 0; d < cur.order.length - cur.index; d++) {
+    const when = new Date(now.getTime() + d * DAY);
+    if (FACTS.dailyCharacter(CHARACTERS, when).id !== FACTS.dailyCharacter(grown, when, added).id) moved++;
   }
-  if (repeats) fail(`daily: ${repeats} repeat(s) inside one ${CHARACTERS.length}-day cycle`);
-  if (seen.size !== CHARACTERS.length) fail(`daily: only ${seen.size}/${CHARACTERS.length} characters can ever be the answer`);
+  if (moved) fail(`daily: adding a fighter changed ${moved} puzzle(s) in the cycle already running`);
+  const nextStart = new Date(now.getTime() + (cur.order.length - cur.index) * DAY);
+  const before = FACTS.dailyCycle(CHARACTERS, nextStart).order.map((c) => c.id);
+  const after = FACTS.dailyCycle(grown, nextStart, added).order.map((c) => c.id);
+  if (after.join() !== [...before, "healthcheck-ghost"].join()) fail("daily: adding a fighter reshuffled the next cycle");
   // Solve rate, played the way a clue-tracking person plays.
   const playOnce = (ans) => {
     let pool = [...CHARACTERS];

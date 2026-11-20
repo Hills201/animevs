@@ -97,6 +97,8 @@ Checks roster data, share-link codec order, duo synergies, NaN safety, ladder di
 
 All characters live in the `CHARACTERS` array at the top of `src/App.jsx`. Edit them there, then run `node healthcheck.mjs` before you push. New characters must be appended to the end of `CODEC_IDS`, never inserted, or existing share links will point at the wrong fighters.
 
+A new character also needs two entries in `src/animeFacts.js`: a row in `CHARACTER_FACTS` (the Daily puzzle's clues) and a line in `DAILY_ADDED` with the date you added it, for example `["new-fighter-id", "2026-12-01"]`. The Daily answer follows a frozen order (`DAILY_DECK`); a new character waits for the current cycle to finish and then joins the end of every later cycle, so upcoming puzzles never reshuffle or repeat early. The health check fails if either entry is missing.
+
 ## Notes
 
 - Both players in a Blind Draft need the same roster version for team codes to resolve identically. Auction rooms are always consistent because both clients derive the lot order from the same seed in the room.

@@ -1,5 +1,11 @@
 # Changelog
 
+## Daily rotation no longer reshuffles (20 November 2026)
+- The Daily answer order is now a frozen list (`DAILY_DECK` in `src/animeFacts.js`) instead of a shuffle of the roster done at runtime. The list is today's order, so the schedule that was already running is unchanged.
+- Before, adding one character (or even reordering `CHARACTERS`) reshuffled every upcoming puzzle and could bring back an answer from a few days earlier.
+- New characters go in `DAILY_ADDED` with the date they were added. They wait for the current cycle to end, then join the end of every later cycle.
+- `healthcheck.mjs` fails if a character is in neither list, and proves that adding one leaves the running cycle untouched.
+
 ## Bug-fix pass (20 November 2026)
 - **Blind Draft rooms:** a third person entering a room code could take over the "Player B" seat of a room that was already full (the seat claim never checked that it had actually won the seat). The claim is now checked, and a full room says so.
 - **Blind Draft rooms:** the room code is now kept in the URL, so reloading the page puts you back in the same room and seat, with your locked team restored.

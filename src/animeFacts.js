@@ -279,32 +279,101 @@ export function compare(guess, answer) {
 }
 
 // ── the daily pick ─────────────────────────────────────────────────────────
-// One fixed permutation, cycled by day. Repeats land exactly one roster-length
-// apart — never sooner — and adding a character extends the cycle rather than
-// reshuffling it. Deliberately NOT reseeded per cycle: reshuffling lets a
-// character land near the seam twice in a fortnight.
-function mulberry32(a) {
-  return function () {
-    a |= 0; a = (a + 0x6D2B79F5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+// The answer cycles through a FROZEN order, one fighter per day. The order is
+// written out below instead of being shuffled from the roster at runtime, so
+// editing the roster can never reshuffle it:
+//
+//   · Reordering, re-rating or renaming fighters in CHARACTERS changes nothing.
+//   · A new fighter goes in DAILY_ADDED with the date it was added. It waits for
+//     the cycle that is running to finish, then joins the end of every cycle
+//     after that. Nobody already scheduled moves, so no answer repeats early.
+//   · A fighter that is in the roster but in neither list is simply never the
+//     answer (and healthcheck.mjs fails until it is listed).
+//
+//   *** Never reorder or insert into DAILY_DECK. Add new fighters to DAILY_ADDED. ***
+//
+// Repeats land a full cycle apart. The order is deliberately not reshuffled per
+// cycle: reshuffling lets a character land near the seam twice in a fortnight.
+export const DAILY_DECK = [
+  "zeke-attack-on-titan", "mavis-fairy-tail", "beerus-dragon-ball", "shanks-one-piece",
+  "alphonse-fullmetal-alchemist", "giyu-demon-slayer", "touka-tokyo-ghoul", "toshiro-bleach",
+  "metal-bat-one-punch-man", "trunks-dragon-ball", "kaneki-tokyo-ghoul", "yuno-black-clover",
+  "todo-jujutsu-kaisen", "reiner-titan-attack-on-titan", "sasuke-naruto", "noelle-black-clover",
+  "garou-one-punch-man", "nobara-jujutsu-kaisen", "byakuya-bleach", "luffy-one-piece",
+  "gojo-satoru-jujutsu-kaisen", "gohan-dragon-ball", "beam-chainsaw-man", "meruem-hunter-x-hunter",
+  "ace-one-piece", "hakari-jujutsu-kaisen", "goku-dragon-ball", "nanami-jujutsu-kaisen",
+  "meliodas-seven-deadly-sins", "crocodile-one-piece", "aizawa-my-hero-academia", "shinobu-demon-slayer",
+  "kurapika-hunter-x-hunter", "gremmy-bleach", "zagred-black-clover", "bakugo-my-hero-academia",
+  "boros-one-punch-man", "doma-demon-slayer", "jiren-dragon-ball", "kenpachi-bleach",
+  "naruto-naruto", "escanor-seven-deadly-sins", "yoruichi-bleach", "roy-mustang-fullmetal-alchemist",
+  "pain-naruto", "akaza-demon-slayer", "mereoleona-black-clover", "broly-dragon-ball",
+  "olivier-fullmetal-alchemist", "kokushibo-demon-slayer", "yuji-itadori-jujutsu-kaisen", "hashirama-naruto",
+  "natsu-fairy-tail", "orochimaru-naruto", "erza-fairy-tail", "feitan-hunter-x-hunter",
+  "obito-naruto", "minato-naruto", "vegeta-dragon-ball", "greed-fullmetal-alchemist",
+  "merlin-seven-deadly-sins", "scar-fullmetal-alchemist", "tatsumaki-one-punch-man", "aizen-bleach",
+  "makima-chainsaw-man", "edward-elric-fullmetal-alchemist", "gon-hunter-x-hunter", "levi-attack-on-titan",
+  "power-chainsaw-man", "laxus-fairy-tail", "todoroki-my-hero-academia", "hisoka-hunter-x-hunter",
+  "whitebeard-one-piece", "genos-one-punch-man", "jiraiya-naruto", "rengoku-demon-slayer",
+  "law-one-piece", "gran-torino-my-hero-academia", "blast-one-punch-man", "asta-black-clover",
+  "tsunade-naruto", "gyomei-demon-slayer", "muzan-demon-slayer", "ulquiorra-bleach",
+  "erwin-attack-on-titan", "megumi-jujutsu-kaisen", "mikasa-attack-on-titan", "mihawk-one-piece",
+  "piccolo-dragon-ball", "roger-one-piece", "mirko-my-hero-academia", "zoro-one-piece",
+  "maki-jujutsu-kaisen", "chrollo-hunter-x-hunter", "dabi-my-hero-academia", "killua-hunter-x-hunter",
+  "nozel-black-clover", "armin-attack-on-titan", "cell-dragon-ball", "kishibe-chainsaw-man",
+  "netero-hunter-x-hunter", "atomic-samurai-one-punch-man", "yami-black-clover", "gowther-seven-deadly-sins",
+  "endeavor-my-hero-academia", "biscuit-hunter-x-hunter", "might-guy-naruto", "tanjiro-demon-slayer",
+  "gaara-naruto", "doflamingo-one-piece", "bang-one-punch-man", "itachi-naruto",
+  "zenitsu-demon-slayer", "father-fullmetal-alchemist", "gray-fairy-tail", "julius-black-clover",
+  "ban-seven-deadly-sins", "yuta-jujutsu-kaisen", "eren-titan-attack-on-titan", "shigaraki-my-hero-academia",
+  "kakashi-naruto", "overhaul-my-hero-academia", "inosuke-demon-slayer", "geto-jujutsu-kaisen",
+  "tengen-demon-slayer", "denji-chainsaw-man", "deku-my-hero-academia", "kaido-one-piece",
+  "choso-jujutsu-kaisen", "estarossa-seven-deadly-sins", "orihime-bleach", "jean-attack-on-titan",
+  "zeldris-seven-deadly-sins", "katana-man-chainsaw-man", "jellal-fairy-tail", "android-18-dragon-ball",
+  "saitama-one-punch-man", "ichigo-bleach", "sanji-one-piece", "neferpitou-hunter-x-hunter",
+  "aki-chainsaw-man", "king-bradley-fullmetal-alchemist", "sakura-naruto", "majin-buu-dragon-ball",
+  "yamamoto-bleach", "reze-chainsaw-man", "renji-bleach", "sukuna-jujutsu-kaisen",
+  "historia-attack-on-titan", "illumi-hunter-x-hunter", "kisuke-bleach", "mahito-jujutsu-kaisen",
+  "gildarts-fairy-tail", "madara-naruto", "yhwach-bleach", "zeref-fairy-tail",
+];
+
+// Fighters added after the deck was frozen: [id, "YYYY-MM-DD" (UTC) it was added].
+// Append only, oldest first. Use the real date: a date in the past rewrites the
+// cycles since then and shifts the puzzles that follow.
+export const DAILY_ADDED = [
+  // ["new-fighter-id", "2026-12-01"],
+];
+
 const DAY_MS = 86400000;
 export function dayNumber(date = new Date()) {
   const utc = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
   return Math.floor(utc / DAY_MS) - 20000;   // day 0 = 2024-10-04 UTC
 }
-export function dailyCharacter(characters, date = new Date()) {
-  const deck = [...characters];
-  const rng = mulberry32(20260919);
-  for (let i = deck.length - 1; i > 0; i--) {
-    const j = Math.floor(rng() * (i + 1));
-    [deck[i], deck[j]] = [deck[j], deck[i]];
-  }
+const addedDay = (iso) => (/^\d{4}-\d{2}-\d{2}$/.test(iso) ? dayNumber(new Date(iso + "T00:00:00Z")) : NaN);
+
+// The cycle that contains `date`: its first day, its fighters in order, and how
+// far into it that date is. `added` is a parameter so healthcheck.mjs can try
+// out a roster change without editing this file.
+export function dailyCycle(characters, date = new Date(), added = DAILY_ADDED) {
+  const byId = new Map(characters.map((c) => [c.id, c]));
+  const inDeck = new Set(DAILY_DECK);
+  const base = DAILY_DECK.filter((id) => byId.has(id));          // retired fighters drop out
+  const late = added
+    .filter(([id]) => byId.has(id) && !inDeck.has(id))
+    .map(([id, iso]) => ({ id, day: addedDay(iso) }))
+    .filter((x) => Number.isFinite(x.day));
+  const orderFrom = (start) => [...base, ...late.filter((x) => x.day <= start).map((x) => x.id)];
   const d = dayNumber(date);
-  return deck[((d % deck.length) + deck.length) % deck.length];
+  let start = 0, order = orderFrom(0);
+  if (!order.length) order = characters.map((c) => c.id);        // a roster the deck knows nothing about
+  if (d < 0) start = Math.floor(d / order.length) * order.length;
+  // Walk forward a cycle at a time. A cycle's line-up is fixed on its first day,
+  // which is what makes a mid-cycle addition wait its turn.
+  while (d >= start + order.length) { start += order.length; order = orderFrom(start); }
+  return { start, index: d - start, order: order.map((id) => byId.get(id)) };
+}
+export function dailyCharacter(characters, date = new Date(), added = DAILY_ADDED) {
+  const { order, index } = dailyCycle(characters, date, added);
+  return order[index];
 }
 export function msUntilTomorrow(now = new Date()) {
   const next = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
@@ -333,6 +402,24 @@ export function validateFacts(characters) {
     const top = Math.max(0, ...Object.values(counts));
     if (total > 50 && top / total > 0.9) {
       problems.push(key + ": " + Math.round(100 * top / total) + "% share one value - this column barely narrows anything");
+    }
+  }
+  // The rotation: a frozen deck plus dated additions (see DAILY_DECK above).
+  const deck = new Set(DAILY_DECK);
+  if (deck.size !== DAILY_DECK.length) problems.push("DAILY_DECK lists a fighter twice");
+  const addedIds = new Set();
+  let prev = -Infinity;
+  for (const [id, iso] of DAILY_ADDED) {
+    const day = addedDay(iso);
+    if (!Number.isFinite(day)) problems.push("DAILY_ADDED: " + id + ' needs a "YYYY-MM-DD" date, got "' + iso + '"');
+    else { if (day < prev) problems.push("DAILY_ADDED: " + id + " is dated before the entry above it - append only, oldest first"); prev = day; }
+    if (deck.has(id)) problems.push("DAILY_ADDED: " + id + " is already in DAILY_DECK");
+    if (addedIds.has(id)) problems.push("DAILY_ADDED lists " + id + " twice");
+    addedIds.add(id);
+  }
+  for (const c of characters) {
+    if (!deck.has(c.id) && !addedIds.has(c.id)) {
+      problems.push(c.id + ' is not in the Daily rotation - append ["' + c.id + '", "<today, YYYY-MM-DD>"] to DAILY_ADDED');
     }
   }
   const ids = new Set(characters.map((c) => c.id));
