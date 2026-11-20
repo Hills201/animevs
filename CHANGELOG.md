@@ -1,5 +1,16 @@
 # Changelog
 
+## Bug-fix pass (20 November 2026)
+- **Blind Draft rooms:** a third person entering a room code could take over the "Player B" seat of a room that was already full (the seat claim never checked that it had actually won the seat). The claim is now checked, and a full room says so.
+- **Blind Draft rooms:** the room code is now kept in the URL, so reloading the page puts you back in the same room and seat, with your locked team restored.
+- **Team and result codes:** codes that are too short, repeat a fighter or a role, or point at a role that doesn't exist are now rejected. Before, a hand-edited code could field the same fighter seven times in Versus, or crash the shared-result page.
+- **Spin and Blind Draft:** "Discard & reroll" can no longer hand back the fighter you just threw away.
+- **Daily:** the streak counter on the puzzle screen now shows 0 once a streak has lapsed (the home screen already did). A puzzle left open past midnight UTC stays on the day it was opened instead of mixing two days' guesses.
+- Leaving a screen mid-spin now stops the reel and its sounds.
+- Added the missing `supabase-auction.sql` that the README and the in-game error message point to.
+- `public/updates.html` is generated at build time and is now git-ignored like the other generated pages.
+- Removed the unreachable code-paste flow left over in `src/Versus.jsx`.
+
 ## Signature roles always perfect fit (7 November 2026)
 - `roleFit` now treats a fighter's signature role as at least 2 matching tags, so it is always "Perfect fit · Signature" (+25). 56 of 156 fighters were only a good fit or no match before.
 - Guide text (in-game and generated pages) updated to match.

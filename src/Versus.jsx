@@ -1,7 +1,7 @@
 // Versus: blind-draft rooms + live Auction. This whole file (and the Supabase
 // client it pulls in) is code-split: it only downloads when someone opens
 // Versus or follows a ?room= link, so it never slows down the home screen.
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState } from "react";
 import { supabase, supabaseConfigured } from "./supabaseClient.js";
 import SupportPopup from "./SupportPopup.jsx";
 import {
@@ -11,7 +11,6 @@ import {
   CHARACTERS,
   HowToPlayButton,
   HowToPlayModal,
-  MAX_REROLLS,
   MAX_REROLLS_SPIN,
   PICKS,
   ROLES,
@@ -70,16 +69,9 @@ function PresenceDot({ label, ready }) {
 // then both teams reveal and higher total wins. Uses spin-to-build for the team.
 function PvpMode() {
   const [stage, setStage] = useState("menu"); // menu | build | reveal
-  const [oppCode, setOppCode] = useState("");
-  const [oppTeam, setOppTeam] = useState(null); // decoded opponent (challenge mode) or null (host)
-  const [oppError, setOppError] = useState("");
+  const [oppTeam, setOppTeam] = useState(null); // decoded opponent, set only once both sides have locked
   const [myTeam, setMyTeam] = useState({});     // roleId -> {character, roleId}
-  const [myCode, setMyCode] = useState("");
   const [pvpLocked, setPvpLocked] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [linkCopied, setLinkCopied] = useState(false);
-  const [pasteResult, setPasteResult] = useState("");
-  const [fromLink, setFromLink] = useState(false); // did opponent arrive via a challenge link?
   const [roomCode, setRoomCode] = useState(""); // live Supabase room code
   const [roomRole, setRoomRole] = useState(null); // "a" | "b"
   const [roomState, setRoomState] = useState(null); // current public room row
@@ -156,12 +148,10 @@ function PvpMode() {
       return;
     }
 
-    // Keep the local view authoritative, but fall back to the encoded room
-    // team if a player reloads after locking in.
-    setMyCode(myRoomCode);
-    if (JSON.stringify(myTeam) !== JSON.stringify(mine.team)) setMyTeam(mine.team.reduce((acc, m) => ({ ...acc, [m.roleId]: m }), {}));
+    // The locked code in the room is what the opponent scores against, so both
+    // screens show exactly that team (it also restores the team after a reload).
+    setMyTeam(Object.fromEntries(mine.team.map((m) => [m.roleId, m])));
     setOppTeam(theirs.team);
-    setOppCode(otherRoomCode);
     setRoomError("");
     setStage("reveal");
   }, [roomCode, roomRole, roomState]);
@@ -172,9 +162,16 @@ function PvpMode() {
     const code = genRoomCode();
     const { error } = await supabase.from("rooms").insert({ code, player_a_ready:false, player_b_ready:false, player_a_team:null, player_b_team:null });
     if (error) { setRoomError(error.message); return; }
+    enterRoom(code, "a");
+  }
+
+  // Take a seat locally. The room code goes in the URL so a reload (or a
+  // dropped connection) lands back in the same room, in the same seat.
+  function enterRoom(code, role) {
     setRoomCode(code);
-    setRoomRole("a");
-    try { sessionStorage.setItem(`animevs:room-role:${code}`, "a"); } catch (e) {}
+    setRoomRole(role);
+    try { sessionStorage.setItem(`animevs:room-role:${code}`, role); } catch (e) {}
+    try { window.history.replaceState({}, "", `?room=${code}`); } catch (e) {}
     setStage("build");
   }
 
@@ -187,19 +184,27 @@ function PvpMode() {
     if (error || !data) { setRoomError("Room not found — check the code."); return; }
     const createdAt = data.created_at ? new Date(data.created_at).getTime() : 0;
     if (createdAt && Date.now() - createdAt > ROOM_MAX_AGE_MS) { setRoomError("That room has expired. Create a new room."); return; }
-    if (data.player_b_team && data.player_b_team !== "__JOINED__") { setRoomError("That room already has two players."); return; }
-    // Mark the second seat as occupied immediately. This produces a realtime
-    // row update for the host even though Player B has not locked a team yet.
-    const { error: joinError } = await supabase.from("rooms").update({ player_b_team: "__JOINED__", player_b_ready: false }).eq("code", code).is("player_b_team", null);
+    // Reload / reconnect: this browser already holds a seat in the room.
+    let saved = null;
+    try { saved = sessionStorage.getItem(`animevs:room-role:${code}`); } catch (e) {}
+    if (saved === "a" || saved === "b") {
+      const lockedCode = saved === "a" ? data.player_a_team : data.player_b_team;
+      const locked = (saved === "a" ? data.player_a_ready : data.player_b_ready) && lockedCode ? decodeTeam(lockedCode) : null;
+      if (locked && locked.team) { setMyTeam(Object.fromEntries(locked.team.map((m) => [m.roleId, m]))); setPvpLocked(true); }
+      enterRoom(code, saved);
+      return;
+    }
+    // Claim the second seat only if it is still empty. The update is conditional,
+    // and we ask for the changed row back: no row means someone else is already
+    // sitting there, so a third player can never slip in as a second "Player B".
+    // The write also gives the host a realtime update before B has locked a team.
+    const { data: claimed, error: joinError } = await supabase.from("rooms").update({ player_b_team: "__JOINED__", player_b_ready: false }).eq("code", code).is("player_b_team", null).select();
     if (joinError) { setRoomError(joinError.message); return; }
-    setRoomCode(code);
-    setRoomRole("b");
-    try { sessionStorage.setItem(`animevs:room-role:${code}`, "b"); } catch (e) {}
-    setStage("build");
+    if (!claimed || !claimed.length) { setRoomError("That room already has two players."); return; }
+    enterRoom(code, "b");
   }
 
-  // On mount: if the URL carries a challenge (?vs=CODE), auto-load the opponent
-  // and drop the player straight into building their team.
+  // On mount: if the URL carries a room code (?room=CODE), join that room.
   React.useEffect(() => {
     try {
       const params = new URLSearchParams(window.location.search);
@@ -219,14 +224,6 @@ function PvpMode() {
   const [seenHelp, markSeenHelp] = useSeenModal("animevs_seen_help_pvp");
   const [helpOpen, setHelpOpen] = useState(!seenHelp);
 
-  // Build a full shareable challenge URL from a team code.
-  function challengeLink(code) {
-    try {
-      const base = window.location.origin + window.location.pathname;
-      return `${base}?vs=${code}`;
-    } catch (e) { return code; }
-  }
-
   function spin() {
     if (current || allFilled) return;
     const pool = CHARACTERS.filter((c) => !takenIds.includes(c.id));
@@ -238,7 +235,8 @@ function PvpMode() {
   function discardAndReroll() {
     if (!current || spinning) return;
     if (rerollsUsed >= MAX_REROLLS) return;
-    const pool = CHARACTERS.filter((c) => !takenIds.includes(c.id));
+    // The fighter being thrown away is left out, so a reroll is never wasted on the same one.
+    const pool = CHARACTERS.filter((c) => !takenIds.includes(c.id) && c.id !== current.id);
     setRerollsUsed((r) => r + 1);
     setCurrent(null);
     run(pool, () => {
@@ -251,37 +249,20 @@ function PvpMode() {
   async function lockIn() {
     const teamArr = ROLES.map((r) => myTeam[r.id]);
     const code = encodeTeam(teamArr);
-    if (!code) return;
-    setMyCode(code);
-
-    if (roomCode && roomRole) {
-      const fields = roomRole === "a"
-        ? { player_a_team: code, player_a_ready: true }
-        : { player_b_team: code, player_b_ready: true };
-      const { error } = await supabase.from("rooms").update(fields).eq("code", roomCode);
-      if (error) { setRoomError(error.message); setPvpLocked(false); return; }
-      setPvpLocked(true);
-      // Do not reveal here. The realtime effect waits for BOTH ready flags.
-      return;
-    }
-
-    setStage("reveal");
-  }
-
-  function tryDecodeOpponent() {
-    // accept either a raw code OR a pasted challenge link
-    let val = oppCode.trim();
-    const m = val.match(/[?&]vs=([^&\s]+)/);
-    if (m) val = decodeURIComponent(m[1]);
-    const res = decodeTeam(val);
-    if (res.error) { setOppError(res.error); setOppTeam(null); return false; }
-    setOppError(""); setOppTeam(res.team); return true;
+    if (!code || !roomCode || !roomRole) return;
+    const fields = roomRole === "a"
+      ? { player_a_team: code, player_a_ready: true }
+      : { player_b_team: code, player_b_ready: true };
+    const { error } = await supabase.from("rooms").update(fields).eq("code", roomCode);
+    if (error) { setRoomError(error.message); setPvpLocked(false); return; }
+    setPvpLocked(true);
+    // Do not reveal here. The realtime effect waits for BOTH ready flags.
   }
 
   function reset() {
     try { if (roomCode) sessionStorage.removeItem(`animevs:room-role:${roomCode}`); } catch (e) {}
-    setStage("menu"); setOppCode(""); setOppTeam(null); setOppError(""); setFromLink(false);
-    setMyTeam({}); setMyCode(""); setCurrent(null); setSpinCount(0); setRerollsUsed(0); setPasteResult("");
+    setStage("menu"); setOppTeam(null);
+    setMyTeam({}); setCurrent(null); setSpinCount(0); setRerollsUsed(0);
     setRoomCode(""); setRoomRole(null); setRoomState(null); setRoomError(""); setPvpLocked(false);
     try { window.history.replaceState({}, "", window.location.pathname); } catch (e) {}
   }
@@ -369,11 +350,11 @@ function PvpMode() {
             {rerollsUsed>=MAX_REROLLS ? "No rerolls left — place this fighter" : `↻ Discard & reroll · ${rerollsLeft} left`}
           </button>
         )}
-        {roomCode ? (
+        {roomCode && (
           <div className="c" style={{ marginTop:12, fontSize:12, color:"#a8a29e", textAlign:"center" }}>
             Your team is only shared when you press LOCK IN. The match reveals automatically once both players lock.
           </div>
-        ) : oppTeam && <div className="c" style={{ marginTop:12, fontSize:12, color:"#22c55e", textAlign:"center" }}>Opponent loaded — reveal when your team is full.</div>}
+        )}
       </>
     );
     return (
@@ -426,60 +407,12 @@ function PvpMode() {
   const localTeamScore = result ? result.a : null;
   const opponentScore = result ? result.b : null;
 
-  function copyMyCode(){ navigator.clipboard?.writeText(myCode).then(()=>{ setCopied(true); setTimeout(()=>setCopied(false),1800); }); }
-  function copyMyLink(){ navigator.clipboard?.writeText(challengeLink(myCode)).then(()=>{ setLinkCopied(true); setTimeout(()=>setLinkCopied(false),1800); }); }
-
   return (
     <div className="tIn" style={{ maxWidth:680, margin:"0 auto" }}>
-      {roomCode ? (
-        <div style={{ borderRadius:14, padding:18, marginBottom:18, border:"1px solid rgba(34,197,94,0.35)", background:"rgba(34,197,94,0.07)" }}>
-          <div className="a" style={{ fontSize:24, color:"#f5f5f4" }}>MATCH REVEALED</div>
-          <div className="c" style={{ fontSize:13, color:"#a8a29e", marginTop:4 }}>Room {roomCode} · both teams were locked before either side was revealed.</div>
-        </div>
-      ) : (
-      <>
-      {/* My code to share */}
-      <div style={{ borderRadius:14, padding:20, marginBottom:18, border:"1px solid rgba(168,85,247,0.4)", background:"rgba(168,85,247,0.08)" }}>
-        <div className="c" style={{ fontSize:12, textTransform:"uppercase", letterSpacing:"0.2em", color:"#c084fc", fontWeight:700, marginBottom:8 }}>Challenge link — send it to a friend</div>
-        <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-          <div style={{ flex:1, padding:"12px 14px", borderRadius:8, background:"rgba(0,0,0,0.4)", border:"1px solid rgba(255,255,255,0.14)", color:"#c4b5fd", fontSize:13, fontFamily:"monospace", overflowX:"auto", whiteSpace:"nowrap" }}>{challengeLink(myCode)}</div>
-          <button onClick={copyMyLink} className="a" style={{ padding:"12px 18px", borderRadius:8, background:"#a855f7", color:"#fff", border:"none", cursor:"pointer", fontSize:15, flexShrink:0 }}>
-            {linkCopied?"✓ COPIED":"COPY LINK"}
-          </button>
-        </div>
-        <div className="c" style={{ fontSize:12, color:"#a8a29e", marginTop:8 }}>
-          When they open it, they'll build their team and the match resolves instantly — no codes to paste.
-        </div>
-        {/* raw code fallback */}
-        <details style={{ marginTop:12 }}>
-          <summary className="c" style={{ fontSize:12, color:"#78716c", cursor:"pointer", letterSpacing:"0.05em" }}>Prefer a plain code instead?</summary>
-          <div style={{ display:"flex", gap:8, alignItems:"center", marginTop:8 }}>
-            <code style={{ flex:1, padding:"10px 12px", borderRadius:8, background:"rgba(0,0,0,0.4)", border:"1px solid rgba(255,255,255,0.14)", color:"#f5f5f4", fontSize:16, letterSpacing:"0.1em", fontFamily:"monospace", overflowX:"auto" }}>{myCode}</code>
-            <button onClick={copyMyCode} className="c" style={{ padding:"10px 16px", borderRadius:8, background:"rgba(255,255,255,0.08)", color:"#e7e5e4", border:"1px solid rgba(255,255,255,0.14)", cursor:"pointer", fontSize:14, flexShrink:0 }}>
-              {copied?"✓":"COPY"}
-            </button>
-          </div>
-        </details>
+      <div style={{ borderRadius:14, padding:18, marginBottom:18, border:"1px solid rgba(34,197,94,0.35)", background:"rgba(34,197,94,0.07)" }}>
+        <div className="a" style={{ fontSize:24, color:"#f5f5f4" }}>MATCH REVEALED</div>
+        <div className="c" style={{ fontSize:13, color:"#a8a29e", marginTop:4 }}>Room {roomCode} · both teams were locked before either side was revealed.</div>
       </div>
-
-      {/* If no opponent yet, offer to paste one */}
-      {!oppTeam && (
-        <div style={{ borderRadius:14, padding:20, marginBottom:18, border:"1px solid rgba(255,255,255,0.12)", background:"rgba(255,255,255,0.02)" }}>
-          <div className="c" style={{ fontSize:13, color:"#a8a29e", marginBottom:10 }}>
-            Waiting on your opponent. Paste their code or challenge link here to see who wins — or send yours and let them run the match.
-          </div>
-          <div style={{ display:"flex", gap:8 }}>
-            <input value={oppCode} onChange={(e)=>{ setOppCode(e.target.value); setOppError(""); }}
-              placeholder="Paste opponent's code or link…" className="c"
-              style={{ minWidth:0, flex:1, padding:"10px 12px", borderRadius:8, background:"rgba(255,255,255,0.05)", border:`1px solid ${oppError?"#ef4444":"rgba(255,255,255,0.14)"}`, color:"#f5f5f4", fontSize:14, outline:"none" }} />
-            <button onClick={tryDecodeOpponent} className="c" style={{ padding:"10px 18px", borderRadius:8, background:"#a855f7", color:"#fff", border:"none", cursor:"pointer", fontWeight:700, fontSize:14 }}>REVEAL</button>
-          </div>
-          {oppError && <div className="c" style={{ fontSize:12, color:"#ef4444", marginTop:6 }}>{oppError}</div>}
-        </div>
-      )}
-
-      </>
-      )}
 
       {/* Result */}
       {result && <SupportPopup variant="run" />}

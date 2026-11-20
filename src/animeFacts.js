@@ -294,7 +294,7 @@ function mulberry32(a) {
 const DAY_MS = 86400000;
 export function dayNumber(date = new Date()) {
   const utc = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
-  return Math.floor(utc / DAY_MS) - 20000;   // day 0 = 2024-09-14 UTC
+  return Math.floor(utc / DAY_MS) - 20000;   // day 0 = 2024-10-04 UTC
 }
 export function dailyCharacter(characters, date = new Date()) {
   const deck = [...characters];
