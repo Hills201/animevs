@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import SupportPopup from "./SupportPopup.jsx";
 import {
-  COLUMNS, GUESSES, compare, factsFor, dailyCharacter, dayNumber, msUntilTomorrow,
+  COLUMNS, GUESSES, compare, dailyCharacter, dayNumber, msUntilTomorrow,
 } from "./animeFacts.js";
 
 const RED = "#ff2d35";
@@ -166,8 +166,12 @@ function NextPuzzle() {
 }
 
 export default function DailyGame({ characters }) {
-  const today = dayNumber();
-  const answer = useMemo(() => dailyCharacter(characters), [characters]);
+  // Pinned when the puzzle opens. If the tab stays open past midnight UTC the
+  // player finishes the puzzle they started; the number, the answer and the save
+  // all stay on that same day instead of drifting apart.
+  const [openedAt] = useState(() => new Date());
+  const today = dayNumber(openedAt);
+  const answer = useMemo(() => dailyCharacter(characters, openedAt), [characters, openedAt]);
 
   const [save, setSave] = useState(loadSave);
   const sameDay = save.day === today;
@@ -180,6 +184,8 @@ export default function DailyGame({ characters }) {
   const out = !won && guesses.length >= GUESSES;
   const done = won || out;
   const doneOnLoad = useRef(done);
+  // A streak only counts while it is alive: finished today, or yesterday with today still to play.
+  const streak = save.lastResultDay === today || save.lastResultDay === today - 1 ? (save.streak || 0) : 0;
 
   const commit = (nextIds) => {
     setGuessIds(nextIds);
@@ -230,8 +236,8 @@ export default function DailyGame({ characters }) {
           </div>
         </div>
         <div style={{ textAlign:"right", flexShrink:0 }}>
-          <div className="a" style={{ fontSize:26, color: save.streak ? NEAR : "#57534e", lineHeight:1 }}>
-            {save.streak || 0}
+          <div className="a" style={{ fontSize:26, color: streak ? NEAR : "#57534e", lineHeight:1 }}>
+            {streak}
           </div>
           <div className="c" style={{ fontSize:10, textTransform:"uppercase", letterSpacing:"0.15em", color:"#78716c" }}>
             streak{save.best ? ` · best ${save.best}` : ""}

@@ -14,7 +14,7 @@ const SplitText = lazy(() => import("./SplitText.jsx"));
 const Analytics = lazy(() => import("@vercel/analytics/react").then((m) => ({ default: m.Analytics })));
 const SpeedInsights = lazy(() => import("@vercel/speed-insights/react").then((m) => ({ default: m.SpeedInsights })));
 
-// ─── ROSTER (150) ───────────────────────────────────────────────────────────
+// ─── ROSTER ─────────────────────────────────────────────────────────────────
 const CHARACTERS = [
   { id:"sukuna-jujutsu-kaisen", name:"Sukuna", series:"Jujutsu Kaisen", tier:"SS", cost:11, rating:99, tags:["range","mobility","melee","aura","energy","speed","regen","element","barrier"], role:"captain", ability:{ name:"Malevolent Shrine", type:"clutch", x:10 } },
   { id:"gojo-satoru-jujutsu-kaisen", name:"Gojo Satoru", series:"Jujutsu Kaisen", tier:"SS", cost:11, rating:98, tags:["range","element","melee","aura","speed","energy","stealth","barrier","mobility"], role:"captain", ability:{ name:"Infinity", type:"counter_immune" } },
@@ -725,6 +725,25 @@ function encodeTeam(team){ // team: [{character, roleId}] — 11 bits/slot (8 ch
   const body=_b64url(bytes);
   return "V2"+body+_checksum(body);
 }
+// Shared by both decoders. The checksum is a single character, so a mistyped or
+// hand-built code can still get this far: reject anything that is not a real
+// team (short payload, unknown role, a role or a fighter used twice) instead of
+// handing the UI a squad it can't score or render.
+function _decodeSlots(bits){
+  if(bits.length < SLOT_COUNT*11) return { error:"Code looks mistyped — check it and try again" };
+  const team=[];
+  for(let s=0;s<SLOT_COUNT;s++){
+    let ci=0; for(let b=0;b<8;b++) ci=(ci<<1)|bits[s*11+b];
+    let ri=0; for(let b=0;b<3;b++) ri=(ri<<1)|bits[s*11+8+b];
+    const character=byId(CODEC_IDS[ci]);
+    if(!character) return { error:"Code references an unknown fighter" };
+    if(ri >= SLOT_COUNT) return { error:"Not a valid team code" };
+    team.push({ character, roleId: CODEC_ROLES[ri] });
+  }
+  if(new Set(team.map((m)=>m.roleId)).size !== SLOT_COUNT || new Set(team.map((m)=>m.character.id)).size !== SLOT_COUNT)
+    return { error:"Not a valid team code" };
+  return { team };
+}
 function decodeTeam(code){
   try{
     if(!code || code.slice(0,2)!=="V2") return { error: code && code.slice(0,2)==="V1" ? "That code is from an older version — teams are now 7 fighters" : "Not a valid team code" };
@@ -732,14 +751,9 @@ function decodeTeam(code){
     if(_checksum(body)!==cs) return { error:"Code looks mistyped — check it and try again" };
     const bytes=_unb64url(body);
     let bits=[]; bytes.forEach((byte)=>{ for(let b=7;b>=0;b--) bits.push((byte>>b)&1); });
-    const team=[];
-    for(let s=0;s<SLOT_COUNT;s++){
-      let ci=0; for(let b=0;b<8;b++) ci=(ci<<1)|bits[s*11+b];
-      let ri=0; for(let b=0;b<3;b++) ri=(ri<<1)|bits[s*11+8+b];
-      const id=CODEC_IDS[ci]; const character=byId(id);
-      if(!character) return { error:"Code references an unknown fighter" };
-      team.push({ character, roleId: CODEC_ROLES[ri] });
-    }
+    const slots=_decodeSlots(bits);
+    if(slots.error) return slots;
+    const team=slots.team;
     return { team };
   } catch(e){ return { error:"Could not read that code" }; }
 }
@@ -771,15 +785,13 @@ function decodeResult(code){
     if(_checksum(body)!==cs) return { error:"Code looks mistyped — check it and try again" };
     const bytes=_unb64url(body);
     let bits=[]; bytes.forEach((byte)=>{ for(let b=7;b>=0;b--) bits.push((byte>>b)&1); });
-    const team=[];
-    for(let s=0;s<SLOT_COUNT;s++){
-      let ci=0; for(let b=0;b<8;b++) ci=(ci<<1)|bits[s*11+b];
-      let ri=0; for(let b=0;b<3;b++) ri=(ri<<1)|bits[s*11+8+b];
-      const id=CODEC_IDS[ci]; const character=byId(id);
-      if(!character) return { error:"Code references an unknown fighter" };
-      team.push({ character, roleId: CODEC_ROLES[ri] });
-    }
-    let reached=0; const base=SLOT_COUNT*11; for(let b=0;b<4;b++) reached=(reached<<1)|bits[base+b];
+    const slots=_decodeSlots(bits);
+    if(slots.error) return slots;
+    const team=slots.team;
+    const base=SLOT_COUNT*11;
+    if(bits.length < base+4) return { error:"Code looks mistyped — check it and try again" };
+    let reached=0; for(let b=0;b<4;b++) reached=(reached<<1)|bits[base+b];
+    if(reached > LADDER.length) return { error:"Not a valid result code" };
     return { team, reached };
   } catch(e){ return { error:"Could not read that code" }; }
 }
@@ -2502,6 +2514,10 @@ function useReel(seedBase) {
   const [spinning, setSpinning] = useState(false);
   const [reelFace, setReelFace] = useState(null);
   const [settleKey, setSettleKey] = useState(0);
+  const timer = React.useRef(null);
+  // Leaving the screen mid-spin must stop the reel, or it keeps ticking (and
+  // beeping) and settles into a screen that is no longer there.
+  React.useEffect(() => () => clearInterval(timer.current), []);
   function run(pool, onSettle) {
     if (spinning || pool.length === 0) return;
     getSpinAudioContext();
@@ -2509,7 +2525,7 @@ function useReel(seedBase) {
     setSpinning(true);
     let ticks = 0;
     const totalTicks = 13;
-    const iv = setInterval(() => {
+    const iv = timer.current = setInterval(() => {
       setReelFace(pool[(Math.random()*pool.length)|0]);
       playSpinTick(ticks / totalTicks);
       ticks++;
@@ -2555,7 +2571,8 @@ function SpinMode() {
   function discardAndReroll() {
     if (!current || spinning) return;
     if (rerollsUsed >= MAX_REROLLS) return;       // hard cap on discards
-    const pool = CHARACTERS.filter((c) => !takenIds.includes(c.id));
+    // The fighter being thrown away is left out, so a reroll is never wasted on the same one.
+    const pool = CHARACTERS.filter((c) => !takenIds.includes(c.id) && c.id !== current.id);
     setRerollsUsed((r) => r + 1);
     setCurrent(null);
     run(pool, () => {
