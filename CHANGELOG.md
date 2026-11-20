@@ -1,5 +1,9 @@
 # Changelog
 
+## Pinch-zoom enabled (20 November 2026)
+- `index.html` no longer sets `maximum-scale=1.0, user-scalable=no`, so players can pinch to zoom the game on phones and tablets.
+- Text fields are 16px on touch screens, which stops iOS from zooming the page in by itself when a field is tapped.
+
 ## Daily rotation no longer reshuffles (20 November 2026)
 - The Daily answer order is now a frozen list (`DAILY_DECK` in `src/animeFacts.js`) instead of a shuffle of the roster done at runtime. The list is today's order, so the schedule that was already running is unchanged.
 - Before, adding one character (or even reordering `CHARACTERS`) reshuffled every upcoming puzzle and could bring back an answer from a few days earlier.

@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0b0c10" />
     <title>animeVS – Anime Team Drafting Game, Guides &amp; Character Database</title>
     <meta name="description" content="animeVS is a free anime team-drafting strategy game. Draft seven fighters on a budget, fit them to roles, exploit counters and climb a ten-rung ladder or play live versus a friend. Includes scoring guides and a searchable character database." />
@@ -25,6 +25,9 @@
     <style>
       html, body, #root { margin: 0; padding: 0; background: #0b0c10; min-height: 100%; }
       * { -webkit-tap-highlight-color: transparent; }
+      /* Pinch-zoom is allowed (no maximum-scale on the viewport). iOS zooms the page by itself when a
+         focused field has text under 16px and does not zoom back out, so fields are 16px on touch screens. */
+      @media (pointer: coarse) { input, textarea, select { font-size: 16px !important; } }
     </style>
     <!-- Google AdSense site-verification / loader. Ad units are only placed on the static guide pages, never on game screens. -->
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-1027225143628108"
