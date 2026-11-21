@@ -24,8 +24,8 @@ const SITE = {
   adClient: "ca-pub-1027225143628108", // AdSense publisher ID
   adSlot: "",                          // paste your ad-unit slot ID here once AdSense approves you. Empty = no ads anywhere.
   kofi: "https://ko-fi.com/animevs",
-  contactEmail: "animevs.app@gmail.com", // shown on the Contact page; leave empty to hide it
-  updated: "13 October 2026",          // shown on the Privacy page
+  contactEmail: "animevs.app@gmail.com", // shown on the Contact and Privacy pages; leave empty to hide it
+  updated: "21 November 2026",         // shown on the Privacy page; change it whenever the policy text changes
 };
 
 // ── load the game data ─────────────────────────────────────────────────────
@@ -512,6 +512,8 @@ shell({
 <ul>
 <li>Whether you have already seen each mode's how-to-play pop-up.</li>
 <li>Your Daily puzzle progress and streak.</li>
+<li>Your record from Spin and Draft runs: rank, XP, best rung and run counts.</li>
+<li>When the Ko-fi support message was last shown, so it does not appear too often.</li>
 <li>While you are in a live room, which seat you hold and which fighters you have placed, so a page reload does not lose your place.</li>
 </ul>
 <p>You can clear all of this at any time from your browser's site-data settings.</p>
@@ -531,7 +533,9 @@ shell({
 <h2>Children</h2>
 <p>animeVS is a general-audience game and is not directed at children under 13. We do not knowingly collect personal information from children.</p>
 <h2>Your rights</h2>
-<p>If you are in the UK or EEA you have rights over personal data held about you, including access, correction and deletion. Because the game does not collect personal identifiers, there is usually nothing to look up, but you can ask through the <a href="/contact">contact page</a>.</p>
+<p>If you are in the UK or EEA you have rights over personal data held about you, including access, correction and deletion. Because the game does not collect personal identifiers, there is usually nothing to look up, but you can ask${SITE.contactEmail ? ` by email at <a href="mailto:${esc(SITE.contactEmail)}">${esc(SITE.contactEmail)}</a> or` : ""} through the <a href="/contact">contact page</a>.</p>
+<h2>Contact</h2>
+<p>Questions about this policy or about your data can be sent${SITE.contactEmail ? ` to <a href="mailto:${esc(SITE.contactEmail)}">${esc(SITE.contactEmail)}</a>, or` : ""} through the <a href="/contact">contact page</a>.</p>
 <h2>Changes</h2>
 <p>If this policy changes, the date at the top will change with it.</p>`,
 });
