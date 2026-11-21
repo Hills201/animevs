@@ -86,10 +86,28 @@ function PvpMode() {
 
   // Live room subscription. Team codes are kept in Supabase but are only
   // decoded into the UI after BOTH ready flags are true.
+  //
+  // Two sources feed the room state: the realtime push, and a slow poll as a
+  // safety net. The push alone is not enough. The row is read before the
+  // subscription is live, so a change in that gap (an opponent joining straight
+  // away) was never delivered, and neither is anything sent during a dropped
+  // connection. Without the poll that player's screen stayed stale until a
+  // reload, and a missed "both locked" meant the match never revealed.
   React.useEffect(() => {
     if (!roomCode || !supabaseConfigured) return undefined;
     let channel;
     let cancelled = false;
+    // A room only moves forward (seat taken, then each side locks), so a late or
+    // out-of-order copy of the row is ignored rather than undoing newer state.
+    const progress = (r) => (r ? (r.player_a_ready ? 1 : 0) + (r.player_b_ready ? 1 : 0) + (r.player_b_team ? 1 : 0) : -1);
+    const apply = (row) => {
+      if (cancelled || !row) return;
+      setRoomState((cur) => (progress(row) >= progress(cur) && JSON.stringify(row) !== JSON.stringify(cur) ? row : cur));
+    };
+    const poll = setInterval(async () => {
+      const { data } = await supabase.from("rooms").select("*").eq("code", roomCode).single();
+      apply(data);
+    }, 3000);
     setOpponentOnline(null);
     // Keep the local side stable across remounts/reloads so Player B never
     // falls back to Player A in the result screen.
@@ -106,11 +124,11 @@ function PvpMode() {
         setRoomError("This room has expired. Create a new room to play.");
         return;
       }
-      setRoomState(data);
+      apply(data);
 
       channel = supabase.channel(`pvp-room:${roomCode}`, { config: { presence: { key: roomRole || "unknown" } } })
         .on("postgres_changes", { event: "*", schema: "public", table: "rooms", filter: `code=eq.${roomCode}` },
-          (payload) => { if (payload.new) setRoomState(payload.new); })
+          (payload) => apply(payload.new))
         .on("presence", { event: "sync" }, () => {
           const state = channel.presenceState();
           const keys = Object.keys(state);
@@ -125,6 +143,7 @@ function PvpMode() {
 
     return () => {
       cancelled = true;
+      clearInterval(poll);
       if (channel) supabase.removeChannel(channel);
       setOpponentOnline(null);
     };

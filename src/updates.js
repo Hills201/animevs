@@ -10,6 +10,7 @@ export const UPDATES = [
     "You can now pinch to zoom the game on phones and tablets.",
     "The Daily puzzle keeps a fixed order of answers, so adding new fighters no longer reshuffles upcoming puzzles. The streak counter also resets correctly when a streak lapses.",
     "Blind Draft rooms: a full room can no longer be entered by a third player, and reloading the page puts you back in your seat.",
+    "Blind Draft rooms also recover by themselves if a live update is missed, so a match can no longer get stuck waiting for a reveal.",
     "Discard and reroll never hands back the fighter you just threw away.",
     "The home page now explains how a run works and how a team is scored, and mistyped addresses show a proper not-found page.",
   ]],

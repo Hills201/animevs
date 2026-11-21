@@ -1,5 +1,10 @@
 # Changelog
 
+## Blind Draft no longer depends on live pushes alone (21 November 2026)
+- Blind Draft rooms now re-check the room every 3 seconds as a safety net, the way Auction rooms already did. Before, a player whose live update was missed (an opponent joining at once, or a dropped connection) kept a stale screen until they reloaded, and a missed "both locked" meant the match never revealed for them.
+- Room updates are forward-only, so a late copy of the room can't undo newer state on screen.
+- Found by playing real matches on the live site. With one player's live connection cut, the old code passed 1 of 5 checks and the new code passes all 5.
+
 ## Database: no public delete, daily clean-up (21 November 2026)
 - On the live Supabase project, the single "anyone can do everything" rule on `rooms` and `auction_rooms` was replaced by separate create, read and update rules. The public can no longer delete rooms.
 - A daily job (`animevs-delete-old-rooms`, 04:17 UTC) now deletes rooms more than a day old. 656 old Blind Draft rooms and 323 old Auction rooms were removed when it was set up.
