@@ -1,5 +1,9 @@
 # Changelog
 
+## Privacy page: contact email (21 November 2026)
+- The Privacy page now gives the contact email, in "Your rights" and in a new "Contact" section, and its "Last updated" date is 21 November 2026.
+- The list of what is stored in the browser now also mentions the Spin and Draft record (rank, XP, best rung) and the Ko-fi message timer, which were saved on the device but not listed.
+
 ## Contact email (21 November 2026)
 - The Contact page now shows an email address (`contactEmail` in `build-content.mjs`), both as its own line and as the first route for rights-holder enquiries.
 
