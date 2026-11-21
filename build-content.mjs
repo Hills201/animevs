@@ -24,7 +24,7 @@ const SITE = {
   adClient: "ca-pub-1027225143628108", // AdSense publisher ID
   adSlot: "",                          // paste your ad-unit slot ID here once AdSense approves you. Empty = no ads anywhere.
   kofi: "https://ko-fi.com/animevs",
-  contactEmail: "",                    // optional: shown on the Contact and Privacy pages when filled in
+  contactEmail: "animevs.app@gmail.com", // shown on the Contact page; leave empty to hide it
   updated: "13 October 2026",          // shown on the Privacy page
 };
 
@@ -554,7 +554,7 @@ shell({
 <li><b>Bugs, suggestions and balance feedback:</b> open <a href="/">the game</a> and tap Feedback.</li>
 <li><b>Support the project:</b> <a href="${SITE.kofi}" rel="noopener">Ko-fi</a>.</li>
 ${SITE.contactEmail ? `<li><b>Email:</b> <a href="mailto:${esc(SITE.contactEmail)}">${esc(SITE.contactEmail)}</a></li>` : ""}
-<li><b>Rights holders and copyright concerns:</b> use Feedback and choose a category that fits, mentioning that it concerns content or rights. These are looked at promptly.</li>
+<li><b>Rights holders and copyright concerns:</b> ${SITE.contactEmail ? `email <a href="mailto:${esc(SITE.contactEmail)}">${esc(SITE.contactEmail)}</a>, or ` : ""}use Feedback and choose a category that fits, mentioning that it concerns content or rights. These are looked at promptly.</li>
 </ul>
 <h2>Frequently asked questions</h2>
 ${faq.map(([q, an]) => `<h3>${esc(q)}</h3><p>${esc(an)}</p>`).join("")}`,

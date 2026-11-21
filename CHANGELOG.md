@@ -1,5 +1,8 @@
 # Changelog
 
+## Contact email (21 November 2026)
+- The Contact page now shows an email address (`contactEmail` in `build-content.mjs`), both as its own line and as the first route for rights-holder enquiries.
+
 ## Readable home page (21 November 2026)
 - The home screen now has plain text under the play cards: what animeVS is, how a run works, how a team is scored, the other modes and the latest updates. The numbers in it are read from the game data, so they stay correct when the roster, counters or ladder change.
 - The static intro in `index.html` (what search engines and slow connections see before the game loads) carries the same explanations.
