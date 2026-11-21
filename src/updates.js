@@ -6,6 +6,7 @@
 // the home screen strips the tags and shows plain text.
 export const UPDATES = [
   ["21 November 2026", "Fixes, zoom and a steadier Daily", [
+    "Four new guides: <a href=\"/guides/first-run\">a full run worked through step by step</a>, <a href=\"/guides/common-mistakes\">six mistakes that end runs early</a>, <a href=\"/guides/daily-strategy\">Daily puzzle strategy with the best opening guesses</a> and <a href=\"/guides/design-notes\">design notes</a> on why the rules are what they are.",
     "You can now pinch to zoom the game on phones and tablets.",
     "The Daily puzzle keeps a fixed order of answers, so adding new fighters no longer reshuffles upcoming puzzles. The streak counter also resets correctly when a streak lapses.",
     "Blind Draft rooms: a full room can no longer be entered by a third player, and reloading the page puts you back in your seat.",
