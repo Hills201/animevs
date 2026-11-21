@@ -1,5 +1,10 @@
 # Changelog
 
+## Database: no public delete, daily clean-up (21 November 2026)
+- On the live Supabase project, the single "anyone can do everything" rule on `rooms` and `auction_rooms` was replaced by separate create, read and update rules. The public can no longer delete rooms.
+- A daily job (`animevs-delete-old-rooms`, 04:17 UTC) now deletes rooms more than a day old. 656 old Blind Draft rooms and 323 old Auction rooms were removed when it was set up.
+- `supabase-auction.sql` now describes both tables, the access rules, live updates and the clean-up job exactly as deployed, and the README points to it for both formats.
+
 ## Four new articles (21 November 2026)
 - `/guides/first-run`: one ordinary team followed from the draw to the rung that stops it, with every score and the best single swap.
 - `/guides/common-mistakes`: six habits that end runs early, each measured across 600 simulated teams.
