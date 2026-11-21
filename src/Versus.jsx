@@ -693,7 +693,7 @@ function AuctionMode({ onExit }) {
     if (c) await commit((f) => auctionLock(f, me, c));
   }
   function inviteLink() {
-    try { return `${window.location.origin}${window.location.pathname}?room=${code}&m=auction`; } catch (e) { return code; }
+    try { return `${window.location.origin}/?room=${code}&m=auction`; } catch (e) { return code; }
   }
   function copyInvite() {
     navigator.clipboard?.writeText(inviteLink()).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1800); });

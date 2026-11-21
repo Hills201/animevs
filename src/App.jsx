@@ -2232,7 +2232,7 @@ function ClimbResult({ team, onReplay, replayLabel }) {
     const code = encodeResult(team, reached);
     if (!code) return;
     let url = code;
-    try { url = `${window.location.origin}${window.location.pathname}?result=${code}`; } catch (e) {}
+    try { url = `${window.location.origin}/?result=${code}`; } catch (e) {}
     navigator.clipboard?.writeText(url).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),1800);});
   }
 

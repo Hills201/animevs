@@ -4,6 +4,8 @@
 - `vercel.json` no longer rewrites every unknown address to the home page. Mistyped or made-up URLs used to return the game as if they were real pages; they now return a proper 404.
 - New generated `404.html` with links back to the game and the guides. It is marked `noindex`, carries no ad script and is left out of the sitemap.
 - Game links are unaffected: rooms, shared results and the Daily all use `/?...` on the home page.
+- Shared result links and auction invite links are now always built on the home page address, and an address with a trailing slash (such as `/guides/`) redirects to the page without it.
+- Known edge case: a result link that was copied while the game was open at a wrong address (for example `/play?result=...`) used to work by accident and now shows the not-found page.
 
 ## Pinch-zoom enabled (20 November 2026)
 - `index.html` no longer sets `maximum-scale=1.0, user-scalable=no`, so players can pinch to zoom the game on phones and tablets.
