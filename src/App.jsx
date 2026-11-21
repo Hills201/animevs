@@ -1,5 +1,6 @@
 import React, { useState, useMemo, Suspense, lazy } from "react";
-import { dayNumber } from "./animeFacts.js";
+import { dayNumber, GUESSES as DAILY_GUESSES } from "./dailyClock.js";
+import { UPDATES } from "./updates.js";
 import { gsap, useGSAP, revealOnScroll, parallax, startSmoothScroll, scrollToTop, smoothScrollToTop, prefersReducedMotion } from "./motion.js";
 import { SpotlightCard, ShinyText, Magnet, CountUp } from "./reactbits.jsx";
 
@@ -1904,6 +1905,8 @@ function Home({ setMode }) {
 
         </section>
 
+        <HomeAbout />
+
         {/* guides */}
         <section data-reveal>
         <HubSectionTitle>Guides &amp; strategy</HubSectionTitle>
@@ -1935,6 +1938,91 @@ function Home({ setMode }) {
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─── HOME: ABOUT THE GAME ───────────────────────────────────────────────────
+// Plain, readable text under the play cards: what the game is, how a run goes,
+// how a score is built, the other modes and what changed lately. Every number
+// is read from the game data above, so this can't drift when the roster,
+// counters or ladder change.
+const plainText = (html) => String(html).replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&gt;/g, ">").replace(/&lt;/g, "<");
+function HomeAbout() {
+  const seriesCount = new Set(CHARACTERS.map((c) => c.series)).size;
+  const boosts = LADDER.map((r) => r.boost);
+  const ctrMin = Math.min(...Object.values(COUNTER_TIERS).map((t) => t.one));
+  const ctrMax = counterReward({ tier: "strong" }, 99);
+  const sample = COUNTERS[0];
+  const h2 = { fontSize:24, lineHeight:1.15, color:"#f5f5f4", margin:"0 0 8px", fontWeight:400 };
+  const p = { fontSize:16, lineHeight:1.6, color:"#d6d3d1", margin:"0 0 12px" };
+  const li = { marginBottom:8 };
+  const list = { ...p, paddingLeft:22 };
+  const b = { color:"#f5f5f4" };
+  const link = { color:"#fca5a5", fontWeight:600, textUnderlineOffset:3 };
+  const block = { padding:"18px 18px 8px", borderRadius:14, border:"1px solid rgba(255,255,255,0.08)", background:"rgba(255,255,255,0.02)", marginTop:14 };
+  return (
+    <div style={{ marginTop:26 }}>
+      <section data-reveal style={{ ...block, marginTop:0 }}>
+        <h2 className="a" style={h2}>What is animeVS?</h2>
+        <p style={p}>
+          animeVS is a free team-drafting strategy game that runs in your browser. You build a squad of {ROLES.length} fighters
+          from a roster of {CHARACTERS.length} characters across {seriesCount} anime series, give each one a role, and send the
+          team up a {LADDER.length}-rung ladder of rival squads. There is no account to create and nothing to install.
+        </p>
+        <p style={p}>
+          Battles are decided by the numbers, not by dice. The same team against the same rung always produces the same score,
+          so when a run ends you can see exactly which rung stopped you and build differently next time.
+        </p>
+      </section>
+
+      <section data-reveal style={block}>
+        <h2 className="a" style={h2}>How a run works</h2>
+        <ol style={list}>
+          <li style={li}><b style={b}>Pick Spin or Draft.</b> In Spin the reel hands you one fighter at a time, with {MAX_REROLLS_SPIN} discard for the whole run. In Draft every spin shows {DRAW_SIZE} fighters and you buy one, with {BUDGET} credits to cover all {PICKS} picks and {MAX_REROLLS_DRAFT} rerolls.</li>
+          <li style={li}><b style={b}>Place each fighter in a role.</b> The roles are {ROLES.map((r) => r.name).join(", ")}. Once a role is filled it stays filled, so where you put an early pick shapes the rest of the team.</li>
+          <li style={li}><b style={b}>Lock in and climb.</b> Your team fights rung 1, then rung 2, and keeps going until a rival squad outscores it. Matching a rung's score is enough to clear it.</li>
+          <li style={li}><b style={b}>Keep your record.</b> Your best rung, XP and rank are saved on this device, and any result can be shared as a link.</li>
+        </ol>
+      </section>
+
+      <section data-reveal style={block}>
+        <h2 className="a" style={h2}>How a team is scored</h2>
+        <p style={p}>A team's score starts with the ratings of its {PICKS} fighters. Four things are added on top:</p>
+        <ul style={list}>
+          <li style={li}><b style={b}>Role fit.</b> Each role looks for certain tags. Two or more matching tags is a perfect fit (+15), one is a good fit (+5) and none is a misfit (+0). A fighter's signature role always counts as a perfect fit and adds a further +10.</li>
+          <li style={li}><b style={b}>Counters.</b> There are {COUNTERS.length} tag match-ups, such as {sample.win} beating {sample.lose}. If your team carries more of the winning tag than the rival carries of the losing one, that match-up pays {ctrMin} to {ctrMax} points.</li>
+          <li style={li}><b style={b}>Synergy.</b> {DUOS.length} pairs from the source material (family, mentors and students, sworn rivals) pay +{DUO_BONUS} each when both fighters are on your squad.</li>
+          <li style={li}><b style={b}>Abilities.</b> Every fighter has one. Some add rating in a particular role or on the later rungs, some lift the roles next to them, and some cancel the rival's strongest counter.</li>
+        </ul>
+        <p style={p}>
+          The ladder gets harder as you climb: each rung scales the rival squad's strength, from ×{Math.min(...boosts).toFixed(2)} on
+          rung 1 up to ×{Math.max(...boosts).toFixed(2)} at the top. The <a style={link} href="/guides/scoring">scoring guide</a> walks
+          through a full example, and the <a style={link} href="/guides/ladder">ladder guide</a> covers every rival squad.
+        </p>
+      </section>
+
+      <section data-reveal style={block}>
+        <h2 className="a" style={h2}>Other ways to play</h2>
+        <ul style={list}>
+          <li style={li}><b style={b}>Versus: Blind Draft.</b> You and a friend join a live room and each spin a team in secret. Both teams are revealed together once you have both locked in, and the higher score wins.</li>
+          <li style={li}><b style={b}>Versus: Auction.</b> Fighters come up one at a time and you both bid from a ${AUCTION_BUDGET} purse against a clock. A fighter you win is gone from your rival's reach, and $1 is always held back for each empty slot so nobody is left short of a full team.</li>
+          <li style={li}><b style={b}>Daily puzzle.</b> One mystery fighter a day, the same for everyone. You get {DAILY_GUESSES} guesses, and each guess shows which clues match: anime, debut year, species, hair, affiliation and gender.</li>
+        </ul>
+      </section>
+
+      <section data-reveal style={block}>
+        <h2 className="a" style={h2}>What's new</h2>
+        <ul style={{ ...list, listStyle:"none", paddingLeft:0 }}>
+          {UPDATES.slice(0, 3).map(([date, title, items]) => (
+            <li key={date + title} style={{ marginBottom:12 }}>
+              <div><b style={b}>{title}</b> <span style={{ color:"#78716c", fontSize:14 }}>· {date}</span></div>
+              <div style={{ color:"#a8a29e", fontSize:15, lineHeight:1.5 }}>{plainText(items[0])}</div>
+            </li>
+          ))}
+        </ul>
+        <p style={p}><a style={link} href="/updates">See every update →</a></p>
+      </section>
     </div>
   );
 }

@@ -1,3 +1,6 @@
+import { GUESSES, dayNumber, msUntilTomorrow } from "./dailyClock.js";
+export { GUESSES, dayNumber, msUntilTomorrow };
+
 // animeFacts.js — general-anime data for the Daily puzzle.
 //
 // Deliberately separate from CHARACTERS in App.jsx. That roster carries
@@ -238,7 +241,6 @@ export const CHARACTER_FACTS = {
   "touka-tokyo-ghoul":                   ["female", "ghoul", "purple", "Anteiku"],
 };
 
-export const GUESSES = 7;
 
 // The six columns shown in the grid. Studio is deliberately absent: it's real
 // data (and stays in SERIES_FACTS) but it's meta knowledge most viewers don't
@@ -343,11 +345,6 @@ export const DAILY_ADDED = [
   // ["new-fighter-id", "2026-12-01"],
 ];
 
-const DAY_MS = 86400000;
-export function dayNumber(date = new Date()) {
-  const utc = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
-  return Math.floor(utc / DAY_MS) - 20000;   // day 0 = 2024-10-04 UTC
-}
 const addedDay = (iso) => (/^\d{4}-\d{2}-\d{2}$/.test(iso) ? dayNumber(new Date(iso + "T00:00:00Z")) : NaN);
 
 // The cycle that contains `date`: its first day, its fighters in order, and how
@@ -374,10 +371,6 @@ export function dailyCycle(characters, date = new Date(), added = DAILY_ADDED) {
 export function dailyCharacter(characters, date = new Date(), added = DAILY_ADDED) {
   const { order, index } = dailyCycle(characters, date, added);
   return order[index];
-}
-export function msUntilTomorrow(now = new Date()) {
-  const next = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
-  return next - now.getTime();
 }
 
 // ── validation, for healthcheck.mjs ────────────────────────────────────────

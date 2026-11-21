@@ -38,8 +38,29 @@
       <!-- Crawlable intro: shown to search engines and before the app loads; React replaces it on mount. -->
       <main style="max-width:760px;margin:0 auto;padding:32px 20px;font-family:system-ui,sans-serif;color:#e7e5e4;line-height:1.6">
         <h1 style="font-size:28px;margin:0 0 12px">animeVS: the anime team-drafting strategy game</h1>
-        <p>animeVS is a free browser game where you build a team of seven anime fighters on a limited budget, place each one in the role that suits them, and then test the team against a ten-rung ladder of opponents or a friend in a live versus room. Every result is deterministic: there are no hidden dice, so the team you build is the team that wins or loses.</p>
-        <p>Pick a mode: <strong>Draft</strong> (spend 50 credits across seven picks), <strong>Spin</strong> (take what the wheel gives you), <strong>Versus</strong> (blind draft or live auction against another player) and the <strong>Daily</strong> challenge.</p>
+        <p>animeVS is a free team-drafting strategy game that runs in your browser. You build a squad of seven anime fighters, give each one a role, and send the team up a ten-rung ladder of rival squads, or play a friend in a live versus room. There is no account to create and nothing to install.</p>
+        <p>Battles are decided by the numbers, not by dice. The same team against the same rung always produces the same score, so when a run ends you can see exactly which rung stopped you and build differently next time.</p>
+        <h2 style="font-size:20px;margin:24px 0 8px">How a run works</h2>
+        <ol>
+          <li><strong>Pick Spin or Draft.</strong> In Spin the reel hands you one fighter at a time. In Draft every spin shows five fighters and you buy one, with 50 credits to cover all seven picks.</li>
+          <li><strong>Place each fighter in a role:</strong> Captain, Vice-Captain, Tank, Damage, Support, Support II or Healer. Once a role is filled it stays filled.</li>
+          <li><strong>Lock in and climb.</strong> Your team fights rung 1, then rung 2, and keeps going until a rival squad outscores it.</li>
+          <li><strong>Keep your record.</strong> Your best rung, XP and rank are saved on your device, and any result can be shared as a link.</li>
+        </ol>
+        <h2 style="font-size:20px;margin:24px 0 8px">How a team is scored</h2>
+        <p>A team's score starts with the ratings of its seven fighters. Four things are added on top:</p>
+        <ul>
+          <li><strong>Role fit.</strong> Each role looks for certain tags. Two or more matching tags is a perfect fit (+15), one is a good fit (+5) and none is a misfit. A fighter's signature role always counts as a perfect fit and adds a further +10.</li>
+          <li><strong>Counters.</strong> Tags beat other tags, such as range beating melee. Carry more of the winning tag than the rival carries of the losing one and that match-up pays out.</li>
+          <li><strong>Synergy.</strong> Pairs from the source material, such as family, mentors and students or sworn rivals, pay a bonus when both fighters are on your squad.</li>
+          <li><strong>Abilities.</strong> Every fighter has one. Some add rating in a particular role or on the later rungs, some lift the roles next to them, and some cancel the rival's strongest counter.</li>
+        </ul>
+        <h2 style="font-size:20px;margin:24px 0 8px">Other ways to play</h2>
+        <ul>
+          <li><strong>Versus: Blind Draft.</strong> You and a friend each spin a team in secret. Both teams are revealed together once you have both locked in, and the higher score wins.</li>
+          <li><strong>Versus: Auction.</strong> Fighters come up one at a time and you both bid from a $50 purse against a clock.</li>
+          <li><strong>Daily puzzle.</strong> One mystery fighter a day, the same for everyone, with seven guesses and a clue for each guess.</li>
+        </ul>
         <h2 style="font-size:20px;margin:24px 0 8px">Guides</h2>
         <ul>
           <li><a style="color:#fca5a5" href="/guides/how-to-play">How to play</a></li>
