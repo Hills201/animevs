@@ -73,8 +73,10 @@ Versus has two formats and each uses its own table:
 
 | Format | Table | Setup |
 |---|---|---|
-| Blind Draft | `rooms` | created earlier; see the SQL in your Supabase project |
-| Auction | `auction_rooms` | run `supabase-auction.sql` once in the Supabase SQL Editor |
+| Blind Draft | `rooms` | `supabase-auction.sql` |
+| Auction | `auction_rooms` | `supabase-auction.sql` |
+
+`supabase-auction.sql` describes both tables as they are deployed: the columns, the access rules (the public can create, read and update a room but not delete one), live updates, and a daily job that removes rooms more than a day old. The live project already has all of it. Run the file in the Supabase SQL Editor only when setting up a new project; it is safe to run again.
 
 Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` locally in `.env.local` and in Vercel's Environment Variables (see `.env.example`). Without them the Versus screens show "live rooms unavailable".
 
