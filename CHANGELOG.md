@@ -1,5 +1,11 @@
 # Changelog
 
+## Readable home page (21 November 2026)
+- The home screen now has plain text under the play cards: what animeVS is, how a run works, how a team is scored, the other modes and the latest updates. The numbers in it are read from the game data, so they stay correct when the roster, counters or ladder change.
+- The static intro in `index.html` (what search engines and slow connections see before the game loads) carries the same explanations.
+- The update log moved to `src/updates.js` so the `/updates` page and the home screen's "What's new" share one list. New entry for 21 November.
+- The Daily puzzle's facts database no longer loads with the home screen (`src/dailyClock.js` holds the two small things the home screen needs). First load is slightly smaller than before, even with the new text.
+
 ## Real "not found" page (21 November 2026)
 - `vercel.json` no longer rewrites every unknown address to the home page. Mistyped or made-up URLs used to return the game as if they were real pages; they now return a proper 404.
 - New generated `404.html` with links back to the game and the guides. It is marked `noindex`, carries no ad script and is left out of the sitemap.
