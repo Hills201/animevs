@@ -1,5 +1,13 @@
 # Changelog
 
+## Four new articles (21 November 2026)
+- `/guides/first-run`: one ordinary team followed from the draw to the rung that stops it, with every score and the best single swap.
+- `/guides/common-mistakes`: six habits that end runs early, each measured across 600 simulated teams.
+- `/guides/daily-strategy`: what each Daily clue is worth and the best and worst opening guesses, from testing every fighter against every answer.
+- `/guides/design-notes`: the reasons behind the rules, taken from the comments and change log in the source.
+- All four are generated in `build-content.mjs` like the other guides: the prose is fixed, and every figure in it is measured at build time from the game data, with seeded samples so builds are repeatable. The content build takes about 12 seconds (it was about 5).
+- Linked from the guides hub, the home screen, the static intro in `index.html`, the not-found page, the sitemap and the Updates page.
+
 ## Privacy page: contact email (21 November 2026)
 - The Privacy page now gives the contact email, in "Your rights" and in a new "Contact" section, and its "Last updated" date is 21 November 2026.
 - The list of what is stored in the browser now also mentions the Spin and Draft record (rank, XP, best rung) and the Ko-fi message timer, which were saved on the device but not listed.

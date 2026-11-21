@@ -1912,7 +1912,7 @@ function Home({ setMode }) {
         <HubSectionTitle>Guides &amp; strategy</HubSectionTitle>
         <nav aria-label="Guides and site info" style={{ padding:16, borderRadius:14, border:"1px solid rgba(255,255,255,0.08)", background:"rgba(255,255,255,0.02)" }}>
           <div style={{ display:"flex", flexWrap:"wrap", gap:"6px 16px" }}>
-            {[["/guides/how-to-play","How to play"],["/guides/scoring","How scoring works"],["/guides/counters","Counters"],["/guides/ladder","Ladder guide"],["/guides/budget-strategy","Budget strategy"],["/guides/tier-list","Tier list"],["/guides/synergy","Synergy pairs"],["/guides/auction-strategy","Auction strategy"],["/characters","Character database"]].map(([href, label]) => (
+            {[["/guides/how-to-play","How to play"],["/guides/scoring","How scoring works"],["/guides/counters","Counters"],["/guides/ladder","Ladder guide"],["/guides/budget-strategy","Budget strategy"],["/guides/tier-list","Tier list"],["/guides/synergy","Synergy pairs"],["/guides/auction-strategy","Auction strategy"],["/guides/first-run","Your first run"],["/guides/common-mistakes","Common mistakes"],["/guides/daily-strategy","Daily strategy"],["/guides/design-notes","Design notes"],["/characters","Character database"]].map(([href, label]) => (
               <a key={href} href={href} className="c" style={{ color:"#e7e5e4", fontSize:15, fontWeight:600, textDecoration:"underline", textUnderlineOffset:3 }}>{label}</a>
             ))}
           </div>

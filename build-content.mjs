@@ -17,6 +17,7 @@ import path from "node:path";
 import os from "node:os";
 import { pathToFileURL } from "node:url";
 import { UPDATES } from "./src/updates.js";
+import * as FACTS from "./src/animeFacts.js";
 
 const SITE = {
   url: "https://www.animevs.app",   // your live custom domain (animevs.vercel.app redirects here)
@@ -137,9 +138,10 @@ function adUnit() {
 }
 // Dates shown under each page title. Bump a page's date when you change its writing.
 const PAGE_DATES = {
-  "/guides": "2 November 2026", "/guides/how-to-play": "13 October 2026", "/guides/scoring": "7 November 2026",
+  "/guides": "21 November 2026", "/guides/how-to-play": "13 October 2026", "/guides/scoring": "7 November 2026",
   "/guides/counters": "13 October 2026", "/guides/ladder": "7 November 2026", "/guides/budget-strategy": "13 October 2026",
   "/guides/tier-list": "2 November 2026", "/guides/synergy": "2 November 2026", "/guides/auction-strategy": "2 November 2026",
+  "/guides/first-run": "21 November 2026", "/guides/common-mistakes": "21 November 2026", "/guides/daily-strategy": "21 November 2026", "/guides/design-notes": "21 November 2026",
   "/characters": "2 November 2026", "/updates": "21 November 2026",
 };
 // noindex: an error page. It gets no canonical URL, no ad script, and stays out of the sitemap.
@@ -202,6 +204,10 @@ const GUIDES = [
   ["/guides/tier-list", "Tier list and best picks by role", "Every tier ranked, the strongest fighter for each of the seven roles, and the clutch picks for the back half of the ladder."],
   ["/guides/synergy", "Synergy pairs and single-anime squads", "All the duo bonuses, the cheapest ways to stack them, and how far a team from just one anime gets up the ladder."],
   ["/guides/auction-strategy", "Auction strategy", "The live Auction's exact rules, what a fair price looks like by tier, and what hundreds of simulated auctions say about spending."],
+  ["/guides/first-run", "Your first run, step by step", "One ordinary team followed from the draw to the rung that stops it, with the real score at every step and the one swap that takes it further."],
+  ["/guides/common-mistakes", "Six mistakes that end runs early", "Why most runs stop at the same rung, measured across hundreds of simulated teams, and what to do instead."],
+  ["/guides/daily-strategy", "Daily puzzle strategy", "What each clue is worth, the opening guesses that narrow the field most, and the ones that waste a turn."],
+  ["/guides/design-notes", "Design notes", "Why battles have no dice, why bonuses are flat, why ladder squads get no synergy, and what was tried and taken out."],
 ];
 shell({
   file: "guides.html", canonical: "/guides", active: "/guides",
@@ -852,6 +858,269 @@ ${autoFilled ? `<li>${Math.round(100 * autoFilled / players)}% of players ended 
 </ul>
 <p>New to the mode? Read <a href="/guides/how-to-play">How to play</a>, then challenge a friend from the Versus menu.</p>
 <p><a class="cta" href="/">Start an auction</a></p>`,
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// ARTICLES (first run, common mistakes, daily strategy, design notes)
+// ════════════════════════════════════════════════════════════════════════════
+// Prose-led guides. Every figure in them is measured here, at build time, from
+// the game's own rules and data, so the text stays true when the roster or the
+// ladder changes. The samples are seeded, so two builds give the same numbers.
+{
+  const cost = (cs) => cs.reduce((s, c) => s + c.cost, 0);
+  const rng = mulberry32(4242);
+  const randomTeam = () => {
+    for (;;) {
+      const pool = [...CHARACTERS], t = [];
+      for (let i = 0; i < PICKS; i++) t.push(pool.splice(Math.floor(rng() * pool.length), 1)[0]);
+      if (cost(t) <= BUDGET) return t;
+    }
+  };
+  const inOrder = (cs) => cs.map((c, i) => ({ character: c, roleId: ROLE_IDS[i] }));
+  const fitPoints = (team) => team.reduce((s, m) => s + fitIn(m.character, m.roleId) - m.character.rating, 0);
+  const rungName = (r) => `${esc(r.title)} (${esc(r.universe)})`;
+
+  // ── one sample of legal teams, measured several ways ──
+  const SAMPLE = 600;
+  const stats = { lost: 0, reachBest: 0, reachNaive: 0, dist: Array(LADDER.length + 1).fill(0),
+    mine: LADDER.map(() => 0), theirs: LADDER.map(() => 0), counters: LADDER.map(() => 0) };
+  let example = null;
+  for (let i = 0; i < SAMPLE; i++) {
+    const cs = randomTeam();
+    const best = assignRoles(cs), naive = inOrder(cs);
+    const rb = ladderReach(best).reached, rn = ladderReach(naive).reached;
+    stats.lost += fitPoints(best) - fitPoints(naive);
+    stats.reachBest += rb; stats.reachNaive += rn; stats.dist[rb]++;
+    LADDER.forEach((r, k) => { const res = resolveRung(best, r); stats.mine[k] += res.me.total; stats.theirs[k] += res.them.total; stats.counters[k] += res.me.bonus; });
+    // The walkthrough team: the first ordinary one, a team that stalls mid-ladder
+    // and gets visibly worse when its fighters are seated in the order they arrived.
+    if (!example && rb >= 4 && rb <= 6 && rn < rb) example = { cs, best, naive, rb, rn };
+  }
+  const per = (x) => x / SAMPLE;
+  const modeRung = stats.dist.indexOf(Math.max(...stats.dist));
+  const modeShare = Math.round((100 * stats.dist[modeRung]) / SAMPLE);
+  const wallIdx = Math.min(modeRung, LADDER.length - 1);          // the rung most teams fall at
+  const wall = LADDER[wallIdx];
+  const counterAvg = stats.counters.map(per);
+  const easiestCounters = counterAvg.indexOf(Math.max(...counterAvg));
+
+  // ── the walkthrough team, rung by rung, and its best single swap ──
+  const ex = example;
+  const exRows = [], exCost = cost(ex.cs);
+  let exFall = null;
+  for (const r of LADDER) {
+    const res = resolveRung(ex.best, r);
+    exRows.push([String(r.rung), rungName(r), `<b>${res.me.total.toFixed(0)}</b>`, res.me.bonus ? `+${res.me.bonus}` : "0", res.me.duoBonus ? `+${res.me.duoBonus}` : "0", res.them.total.toFixed(0), res.cleared ? "Cleared" : "<b>Fell</b>"]);
+    if (!res.cleared) { exFall = { r, res }; break; }
+  }
+  let swap = null;
+  ex.cs.forEach((out, i) => {
+    for (const c of CHARACTERS) {
+      if (ex.cs.includes(c) || exCost - out.cost + c.cost > BUDGET) continue;
+      const cs = ex.cs.map((x, j) => (j === i ? c : x));
+      const team = assignRoles(cs), lr = ladderReach(team);
+      if (!swap || lr.reached > swap.reached || (lr.reached === swap.reached && lr.margin > swap.margin)) swap = { out, c, team, reached: lr.reached, margin: lr.margin };
+    }
+  });
+  const seat = (team, c) => roleName(team.find((m) => m.character === c).roleId);
+  const exTable = (team) => table(["Role", "Fighter", "Tier", "Cost", "Base rating", "In this role", "Fit"], ROLES.map((r) => {
+    const m = team.find((x) => x.roleId === r.id), f = roleFit(m.character, r.id);
+    return [esc(r.name), `<b>${esc(m.character.name)}</b><br><span class="muted small">${esc(m.character.series)}</span>`, tierBadge(m.character.tier), String(m.character.cost), String(m.character.rating), `<b>${fitIn(m.character, r.id)}</b>`, esc(f.label)];
+  }), ["", "", "", "n", "n", "n", ""]);
+  const fallEdges = exFall ? exFall.res.them.edgeDetails.map((e) => `${esc(e.label)} (+${e.bonus})`) : [];
+
+  shell({
+    file: "guides/first-run.html", canonical: "/guides/first-run", active: "/guides",
+    title: "Your first run, step by step",
+    description: "A complete animeVS run worked through from the draw to the rung that ends it: seven real fighters, where each one sits, every score on the way up, and the one swap that takes the team further.",
+    body: `${crumbs(["/", "Home"], ["/guides", "Guides"], [null, "Your first run"])}
+<h1>Your first run, step by step</h1>
+<p class="lede">The rules of animeVS fit on a postcard, but it is hard to see how they add up until you watch one team go through them. This page follows a single, ordinary team from the draw to the rung that stops it, with the real scores at every step. The team was not picked to look good: it is the first one out of a batch of ${SAMPLE} randomly drawn teams that stalls in the middle of the ladder, which is what most teams do, and that scores worse when its fighters are seated carelessly, which most teams also do.</p>
+<h2>The seven fighters</h2>
+<p>These seven cost ${exCost} of the ${BUDGET} credits a Draft run allows: ${nameList(ex.cs)}. On paper their ratings add up to ${ex.cs.reduce((s, c) => s + c.rating, 0)}. That number is not the team's score. It is only the starting point, and the first decision you make moves it a long way.</p>
+<h2>Step one: who sits where</h2>
+<p>Suppose you seat the fighters in the order they arrived, filling Captain first and Healer last. That earns ${fitPoints(ex.naive)} points of role fit and the team reaches rung ${ex.rn}. Seat the same seven fighters where their tags and signature roles point, and they earn ${fitPoints(ex.best)} points of role fit and reach rung ${ex.rb}. Nothing was bought and nothing was swapped. The only difference is the seating.</p>
+${exTable(ex.best)}
+<p>The last column is why. A perfect fit is worth +15 and a signature role adds +10 on top, so a fighter in the right seat can be worth 25 points more than the same fighter in the wrong one. Over seven seats that gap decides more runs than any single star does.</p>
+${adUnit()}
+<h2>Step two: the climb</h2>
+<p>With the seating settled, the team's score is recalculated against every rival, because counters depend on who you are facing. This is the whole climb:</p>
+${table(["Rung", "Rival squad", "Your score", "From counters", "From synergy", "Rival score", "Result"], exRows, ["n", "", "n", "n", "n", "n", ""])}
+<p>Two things are worth noticing. Your own score moves from rung to rung even though the team never changes, and nearly all of that movement comes from the counters column. Synergy does not move at all: a pair pays the same against every rival. And the rival's score tends to climb, because every rung multiplies the rival squad's strength a little more than the last.</p>
+${exFall ? `<h2>Step three: where it ends, and why</h2>
+<p>The run ends at rung ${exFall.r.rung} against ${rungName(exFall.r)}, ${exFall.res.them.total.toFixed(0)} to ${exFall.res.me.total.toFixed(0)}. The gap is ${(exFall.res.them.total - exFall.res.me.total).toFixed(0)} points. ${fallEdges.length ? `The rival squad also earned counters of its own against this team: ${fallEdges.join(", ")}.` : "The rival squad earned no counters against this team, so the gap is rating and role fit alone."} However small the gap is, it will be exactly the same on the next attempt, because there is no luck in a battle. It only closes if the team changes.</p>` : ""}
+${swap && swap.reached > ex.rb ? `<h2>Step four: one change</h2>
+<p>Every possible single swap that still fits the budget was tried. The best one takes out <b>${esc(swap.out.name)}</b> (${swap.out.cost} credits) and brings in <b>${esc(swap.c.name)}</b> (${swap.c.cost} credits, ${esc(swap.c.series)}), seated as ${esc(seat(swap.team, swap.c))}. With that one change, and the seats re-chosen around it, the team reaches rung ${swap.reached} instead of rung ${ex.rb}.</p>
+<p>The lesson is not that ${esc(swap.c.name)} is the answer. It is that the result screen tells you which rung beat you and by how much, and one well-chosen fighter is often the difference. The <a href="/guides/ladder">ladder guide</a> shows what each rival squad is weak to, which is the quickest way to find that fighter.</p>` : `<h2>Step four: what to change</h2>
+<p>No single swap within the budget takes this team further, which is its own lesson: when a team is short on rating across the board, the fix is the draft, not one seat. The <a href="/guides/budget-strategy">budget guide</a> covers how to spend ${BUDGET} credits so that no seat is weak.</p>`}
+<h2>What to take from it</h2>
+<ul>
+<li><b>Seat first, spend second.</b> Role fit is free points. Check each fighter's signature role before you place them.</li>
+<li><b>Read the counters column.</b> It is the only part of your score that changes from rung to rung, so it is where a stalled team finds its next rung.</li>
+<li><b>Treat a loss as a measurement.</b> The same team will lose to the same rung by the same margin every time, which means the margin is a target you can plan against.</li>
+</ul>
+<p><a class="cta" href="/">Start a run</a></p>`,
+  });
+
+  // ── common mistakes ──
+  const swings = CHARACTERS.map((c) => { const v = ROLE_IDS.map((rid) => fitIn(c, rid)); return Math.max(...v) - Math.min(...v); });
+  const tierAvg = Object.fromEntries(TIERS.map((t) => [t, avg(byTier[t].map((c) => c.rating))]));
+  const tierGap = tierAvg.SS - tierAvg.S;
+  // Best raw rating seven fighters can reach on budget with exactly k SS-tier picks.
+  const bestWithStars = (k) => {
+    const NEG = -1e9, dp = Array.from({ length: PICKS + 1 }, () => Array.from({ length: k + 1 }, () => Array(BUDGET + 1).fill(NEG)));
+    dp[0][0][0] = 0;
+    for (const c of CHARACTERS) {
+      const s = c.tier === "SS" ? 1 : 0;
+      for (let n = PICKS - 1; n >= 0; n--) for (let j = k - s; j >= 0; j--) for (let b = BUDGET - c.cost; b >= 0; b--) {
+        if (dp[n][j][b] > NEG && dp[n][j][b] + c.rating > dp[n + 1][j + s][b + c.cost]) dp[n + 1][j + s][b + c.cost] = dp[n][j][b] + c.rating;
+      }
+    }
+    return Math.max(...dp[PICKS][k]);
+  };
+  const starRows = [0, 1, 2, 3, 4, 5].map((k) => ({ k, total: bestWithStars(k) })).filter((x) => x.total > 0);
+  const starBest = starRows.reduce((a, b) => (b.total > a.total ? b : a));
+  const starFlat = starRows.filter((x) => starBest.total - x.total <= 6);
+  const starCliff = starRows.find((x) => x.k > starFlat[starFlat.length - 1].k);
+  const clutch = CHARACTERS.filter((c) => c.ability?.type === "clutch");
+  const clutchX = clutch.map((c) => c.ability.x || 0);
+  const strongDuos = DUOS.filter(([x, y]) => byId(x).rating >= tierAvg.S && byId(y).rating >= tierAvg.S).length;
+  const lopsided = DUOS.filter(([x, y]) => Math.abs(byId(x).rating - byId(y).rating) > DUO_BONUS).length;
+
+  shell({
+    file: "guides/common-mistakes.html", canonical: "/guides/common-mistakes", active: "/guides",
+    title: "Six mistakes that end runs early",
+    description: `Why most animeVS runs stop at the same rung, measured across ${SAMPLE} simulated teams: seating, relying on stars, the rung ${wall.rung} wall, weak synergy partners and unused late-ladder abilities.`,
+    body: `${crumbs(["/", "Home"], ["/guides", "Guides"], [null, "Common mistakes"])}
+<h1>Six mistakes that end runs early</h1>
+<p class="lede">Most runs do not end because of a bad draw. They end because of a handful of decisions that feel reasonable and cost more than they look. To put numbers on them, ${SAMPLE} random teams that fit the ${BUDGET}-credit budget were run up the ladder under the game's real rules. The figures below all come from that test.</p>
+<h2>1. Seating fighters in the order they arrive</h2>
+<p>Filling Captain first and Healer last, with whoever turns up, is the most expensive habit in the game. Across the test teams it gave away ${fmt1(per(stats.lost))} points of role fit on average compared with seating the same seven fighters in their best roles. In ladder terms the careless seating reached rung ${fmt1(per(stats.reachNaive))} on average and the careful seating reached rung ${fmt1(per(stats.reachBest))}. That is about ${fmt1(per(stats.reachBest) - per(stats.reachNaive))} rungs for free.</p>
+<p><b>Instead:</b> look at the signature role under each fighter before you place them, and keep that seat open if you can.</p>
+<h2>2. Reading the rating and stopping there</h2>
+<p>A fighter's rating is what they are worth before they sit down. Between their best role and their worst, the average fighter moves by ${fmt1(avg(swings))} points. For comparison, the average SS-tier fighter is only ${fmt1(tierGap)} points ahead of the average S-tier fighter. A well-seated S-tier fighter regularly outscores a badly seated SS-tier one, and costs less.</p>
+<p><b>Instead:</b> compare fighters by what they will score in the seat you have open. The <a href="/guides/tier-list">tier list</a> ranks every role that way.</p>
+${adUnit()}
+<h2>3. Expecting stars to carry the team</h2>
+<p>The budget works out to about ${(BUDGET / PICKS).toFixed(1)} credits a seat and an SS-tier fighter costs about ${fmt1(avg(byTier.SS.map((c) => c.cost)))}. The table shows the highest total rating seven fighters can reach on ${BUDGET} credits if you insist on a given number of SS-tier picks.</p>
+${table(["SS-tier picks", "Best total rating possible", "Compared with the best"], starRows.map((x) => [String(x.k), String(x.total), x.total === starBest.total ? "<b>best</b>" : String(x.total - starBest.total)]), ["n", "n", "n"])}
+<p>The striking thing is how flat it is. With anywhere from ${starFlat[0].k} to ${starFlat[starFlat.length - 1].k} SS-tier picks, the best possible total stays within ${starBest.total - Math.min(...starFlat.map((x) => x.total))} points. Cost tracks rating closely, so whatever extra rating a star brings is paid back by a cheaper fighter in another seat. Stars do not buy a higher total. ${starCliff ? `And there is a limit: at ${starCliff.k} the total falls by ${starBest.total - starCliff.total} points, because the remaining seats have to be filled from the very bottom of the roster.` : ""}</p>
+<p><b>Instead:</b> spend on fit, not on tier. Since the raw total hardly changes, the points that separate teams are the role fit, counters and pairs from the other mistakes on this page. The <a href="/guides/budget-strategy">budget guide</a> lists the best value at each price.</p>
+<h2>4. Not planning for rung ${wall.rung}</h2>
+<p>In the test, ${modeShare}% of well-seated teams finished on rung ${modeRung}, which means rung ${wall.rung}, ${rungName(wall)}, is where they fell. Two things happen there at once. The rival's average score steps up to ${per(stats.theirs[wallIdx]).toFixed(0)}, from ${per(stats.theirs[Math.max(wallIdx - 1, 0)]).toFixed(0)} on the rung before. And the average team's counter income drops to ${fmt1(counterAvg[wallIdx])} points, when it was ${fmt1(counterAvg[Math.max(wallIdx - 1, 0)])} on the rung before and ${fmt1(counterAvg[easiestCounters])} against rung ${LADDER[easiestCounters].rung}.</p>
+${table(["Rung", "Rival squad", "Average team's score", "Of which counters", "Rival's score"], LADDER.map((r, k) => [String(r.rung), rungName(r), per(stats.mine[k]).toFixed(0), fmt1(counterAvg[k]), per(stats.theirs[k]).toFixed(0)]), ["n", "", "n", "n", "n"])}
+<p>An average team is comfortably ahead on the early rungs and behind from rung ${wall.rung} on. The teams that get through are the ones carrying counters that still pay against that particular squad.</p>
+<p><b>Instead:</b> read the rung ${wall.rung} entry in the <a href="/guides/ladder">ladder guide</a> before you draft, and keep a seat for a fighter whose tags pay there.</p>
+<h2>5. Taking a weak fighter to complete a pair</h2>
+<p>A synergy pair pays +${DUO_BONUS}. That is real, but it is a fixed amount, and it is easy to give back more than it pays. Of the ${DUOS.length} pairs in the game, ${lopsided} have partners more than ${DUO_BONUS} rating points apart, and only ${strongDuos} have both partners at or above the S-tier average. Taking the weaker half of a lopsided pair into a seat that does not suit them can cost the 25 points of a signature fit to gain ${DUO_BONUS}.</p>
+<p><b>Instead:</b> take a pair when both halves would have earned their seat anyway. The <a href="/guides/synergy">synergy guide</a> lists every pair with both ratings.</p>
+<h2>6. Leaving late-ladder abilities on the bench</h2>
+<p>${clutch.length} fighters have a clutch ability, which adds between ${Math.min(...clutchX)} and ${Math.max(...clutchX)} rating on rungs 6 to 10 and nothing before that. On the early rungs they look ordinary, so they get passed over. But the early rungs are not where runs end. An ability that only switches on from rung 6 is switching on exactly where the average team starts losing.</p>
+<p><b>Instead:</b> if you are choosing between two similar fighters, take the one whose ability works on the back half of the ladder.</p>
+<h2>The short version</h2>
+<p>Seat by signature role, judge fighters by the seat you have open, do not count on stars to lift the total, and draft with rung ${wall.rung} in mind. None of that needs a lucky draw.</p>
+<p><a class="cta" href="/">Put it to the test</a></p>`,
+  });
+
+  // ── daily puzzle strategy ──
+  const sig = (g, a) => FACTS.compare(g, a).map((x) => x.state).join("|");
+  const openers = CHARACTERS.map((g) => {
+    const buckets = {};
+    for (const a of CHARACTERS) { const k = sig(g, a); buckets[k] = (buckets[k] || 0) + 1; }
+    return { g, left: Object.values(buckets).reduce((s, n) => s + n * n, 0) / CHARACTERS.length };
+  }).sort((x, y) => x.left - y.left || (x.g.name < y.g.name ? -1 : 1));
+  const medianLeft = openers[Math.floor(openers.length / 2)].left;
+  const colRows = FACTS.COLUMNS.map((col) => {
+    const counts = {};
+    for (const c of CHARACTERS) { const v = FACTS.factsFor(c)[col.key]; counts[v] = (counts[v] || 0) + 1; }
+    const top = Object.entries(counts).sort((x, y) => y[1] - x[1])[0];
+    return { col, distinct: Object.keys(counts).length, top, share: Math.round((100 * top[1]) / CHARACTERS.length) };
+  });
+  const colBy = (key) => colRows.find((r) => r.col.key === key);
+  const openerRow = (o) => [`<b>${esc(o.g.name)}</b>`, esc(o.g.series), fmt1(o.left)];
+  const debutOf = (c) => FACTS.factsFor(c).year;
+  const years = CHARACTERS.map(debutOf), firstYear = Math.min(...years), lastYear = Math.max(...years);
+  const worst = openers.slice(-6).reverse();
+  const worstAtEnds = worst.every((o) => debutOf(o.g) === firstYear || debutOf(o.g) === lastYear);
+  const seriesIn = (y) => [...new Set(CHARACTERS.filter((c) => debutOf(c) === y).map((c) => c.series))].map(esc).join(" and ");
+  const bestInMiddle = openers.slice(0, 10).every((o) => debutOf(o.g) !== firstYear && debutOf(o.g) !== lastYear);
+
+  shell({
+    file: "guides/daily-strategy.html", canonical: "/guides/daily-strategy", active: "/guides",
+    title: "Daily puzzle strategy and the best opening guesses",
+    description: `How to solve the animeVS Daily puzzle in fewer guesses: what each of the ${FACTS.COLUMNS.length} clues is worth, the opening guesses that narrow the field most, and the ones that waste a turn.`,
+    body: `${crumbs(["/", "Home"], ["/guides", "Guides"], [null, "Daily strategy"])}
+<h1>Daily puzzle strategy and the best opening guesses</h1>
+<p class="lede">The Daily puzzle hides one of the game's ${CHARACTERS.length} fighters and gives you ${FACTS.GUESSES} guesses to find them. Every guess is scored on ${FACTS.COLUMNS.length} clues. This page works out what each clue is worth and which first guess leaves you with the least work, by testing every fighter as an opener against every possible answer.</p>
+<h2>How the clues work</h2>
+<p>Each guess shows ${FACTS.COLUMNS.length} cells: ${FACTS.COLUMNS.map((c) => esc(c.label)).join(", ")}. A green cell means your guess and the answer share that fact exactly. A grey cell means they differ. Debut is the exception: when it is not green it shows an arrow, pointing up if the answer's anime first aired later than your guess's and down if it aired earlier. Hair is always the character's colour when they first appear, so later forms and power-ups do not count.</p>
+<h2>What each clue is worth</h2>
+<p>A clue is useful when it splits the roster into many small groups, and weak when most fighters share one value.</p>
+${table(["Clue", "Different values", "Most common value", "Share of roster"], colRows.map((r) => [esc(r.col.label), String(r.distinct), esc(String(r.top[0])), `${r.share}%`]), ["", "n", "", "n"])}
+<ul>
+<li><b>Affiliation is the strongest clue.</b> There are ${colBy("affil").distinct} different affiliations, so a green cell usually leaves only a handful of fighters. A grey one tells you little, because almost every guess is grey here.</li>
+<li><b>Anime is the workhorse.</b> With ${colBy("anime").distinct} series, a green cell cuts the field to one cast and a grey cell removes a whole cast.</li>
+<li><b>Debut works even when it misses.</b> The arrow removes every series on the wrong side of your guess, so a guess from the middle of the timeline is worth more than one from either end.</li>
+<li><b>Species and hair are lopsided.</b> ${colBy("species").share}% of the roster is ${esc(String(colBy("species").top[0]))} and ${colBy("hair").share}% has ${esc(String(colBy("hair").top[0]))} hair. A green cell on the common value barely helps. A grey one, or a green on a rare value, helps a great deal.</li>
+<li><b>Gender is the weakest clue.</b> ${colBy("gender").share}% of the roster is ${esc(String(colBy("gender").top[0]))}, so it only narrows things when the answer is in the minority.</li>
+</ul>
+${adUnit()}
+<h2>The best opening guesses</h2>
+<p>For each fighter, the test asked: if you open with them, how many fighters are still possible afterwards, on average across every answer? Lower is better. A typical opener leaves about ${fmt1(medianLeft)}. The best leave half that.</p>
+${table(["Opening guess", "Anime", "Fighters still possible, on average"], openers.slice(0, 10).map(openerRow), ["", "", "n"])}
+<p>What these have in common is balance. ${bestInMiddle ? `None of them comes from the oldest or the newest series, so the Debut arrow splits the roster instead of pointing the same way for everyone. They also` : `They`} share a species, hair colour or affiliation with a good number of other fighters without sharing it with too many, so each cell has a real chance of coming back either colour.</p>
+<h2>The openers that waste a turn</h2>
+${table(["Opening guess", "Anime", "Fighters still possible, on average"], worst.map(openerRow), ["", "", "n"])}
+<p>${worstAtEnds ? `Every one of these comes from one end of the timeline: ${seriesIn(firstYear)} (${firstYear}) is the oldest series in the game and ${seriesIn(lastYear)} (${lastYear}) is the newest. Open with one of them and the Debut arrow points the same way for almost every answer, so the most reliable clue tells you next to nothing. Several of them also have a species or affiliation that few other fighters share, so those cells come back grey nearly every time.` : `These are fighters whose facts few others share. Almost every answer comes back grey across the board, which rules out very little.`} They are fine as a final guess when the clues point at them, and poor as a first one.</p>
+<h2>Playing the middle of the puzzle</h2>
+<ul>
+<li><b>Guess to learn, not to be right.</b> On the second and third guess, pick a fighter who tests the clues you have not settled yet, even if you know they cannot be the answer.</li>
+<li><b>Follow the Debut arrow first.</b> It is the one clue that narrows the field every single time, so use it to choose which series to try next.</li>
+<li><b>Once Anime is green, switch to Affiliation.</b> Inside one cast, affiliation and species separate nearly everyone.</li>
+<li><b>Count before the last two guesses.</b> If more fighters fit the clues than you have guesses left, pick one who splits the remaining group rather than one you merely suspect.</li>
+</ul>
+<p>The answer is the same for everyone each day and changes at midnight UTC. Your streak is kept on your device.</p>
+<p><a class="cta" href="/?daily">Play today's puzzle</a></p>`,
+  });
+
+  // ── design notes ──
+  const boosts = LADDER.map((r) => r.boost);
+  shell({
+    file: "guides/design-notes.html", canonical: "/guides/design-notes", active: "/guides",
+    title: "Design notes: why the game works the way it does",
+    description: "The reasoning behind animeVS's rules: why battles have no dice, why bonuses are flat, why ladder squads get no synergy, how the budget and auction avoid dead ends, and what was tried and taken out.",
+    body: `${crumbs(["/", "Home"], ["/guides", "Guides"], [null, "Design notes"])}
+<h1>Design notes: why the game works the way it does</h1>
+<p class="lede">Every rule in animeVS is there for a reason, and most of the reasons are about keeping the game readable: you should be able to look at a result and say why it happened. These notes are drawn from the comments and change log in the game's own source, where the reasons are written down next to the rules.</p>
+<h2>No dice in a battle</h2>
+<p>Randomness decides which fighters you are offered. It decides nothing after that. Once a team is locked in, its score against a given rival is plain arithmetic, and the same team gets the same score every time. The idea comes from basketball's "82-0" team-building games. The point is that you can reason about why a team won or lost. A result tells you exactly how many points short you were and against whom.</p>
+<h2>Flat bonuses you can add in your head</h2>
+<p>Role fit is +15, +5 or nothing. A signature role is +10. A synergy pair is +${DUO_BONUS}. None of these are percentages, and that is deliberate. Every scoring layer is a flat number so that the breakdown on the result screen still adds up in a player's head.</p>
+<h2>Why a counter stops at +${counterReward({ tier: "strong" }, 99)}</h2>
+<p>Counters grow as your advantage in a tag grows, and they come in three strengths, starting at ${Object.values(COUNTER_TIERS).map((t) => t.one).sort((x, y) => x - y).join(", ").replace(/, (\d+)$/, " or $1")} points. But each one is capped, so that no single match-up can dominate a rung by itself, however heavily a team leans on one tag.</p>
+<h2>Why ladder squads earn no synergy</h2>
+<p>On the ladder, synergy is the player's bonus only. The rival squads are well-known teams from their series, so they are full of famous pairs. If they collected synergy too, the squads with the most pairs would gain the most, and those are the late ones, which are already the hardest. Meanwhile several early and middle rungs would gain nothing at all. In Versus both sides are players who drafted for it, so both sides get it.</p>
+<h2>Rivals get fair seats</h2>
+<p>Rival squads are placed in the roles that suit them best, using the same role-fit rules you play under, so they earn their role bonuses fairly too.</p>
+${adUnit()}
+<h2>A signature role is always a perfect fit</h2>
+<p>This one was a correction. Role fit is counted from tags, and for a time a fighter's signature role only added its +10 on top of whatever the tags said. The result was that 56 of the then 156 fighters were merely a good fit, or no fit at all, in the one role named as their best. That read as a mistake to anyone looking at it, so the rule changed: a signature role now always counts as a perfect fit, whatever the tags say.</p>
+<h2>A budget that cannot strand you</h2>
+<p>Draft gives you ${BUDGET} credits for ${PICKS} picks. Two rules stop a run from reaching a dead end. First, the game always holds back enough credits to fill your remaining seats with the cheapest fighters, and will not let you spend into that reserve. Second, every set of five options is guaranteed to contain at least one fighter you can afford. Without those, a player could make one greedy pick and discover three spins later that the run could not be finished.</p>
+<h2>An auction that always ends fairly</h2>
+<p>The live Auction applies the same thinking to two players. Each player must keep $1 back for every seat still empty, so nobody can be bid out of a full team. If a rival cannot afford to raise, the lot sells immediately. And if ${AUCTION_MAX_DRY} lots in a row go unsold, the remaining seats are filled from the cheapest unclaimed fighters, alternating between the two players so that neither gets first choice.</p>
+<p>The room itself is built so that two people acting in the same instant cannot corrupt it. Every action is checked against the exact state it was based on, so exactly one of two simultaneous bids lands and the other player sees the new price.</p>
+<h2>A ladder tested against luck</h2>
+<p>The rival squads are scaled from ×${Math.min(...boosts).toFixed(2)} on rung 1 to ×${Math.max(...boosts).toFixed(2)} at the top. Those numbers are held in place by the automated balance tests the game ships with. Well over a thousand random teams are sent up the ladder and fewer than one in twenty may clear it, while a carefully built team must still be able to reach the top. A gentler ladder was tried for a while, with every rung reduced by 7%, and then taken out again, which put the ladder back at its original strength.</p>
+<h2>The Daily puzzle's clues</h2>
+<p>The Daily shows ${FACTS.COLUMNS.length} clues and used to have a seventh, the animation studio. It was removed for two reasons. It is trivia about the production rather than something a viewer knows about the character, and with it the puzzle became noticeably too easy. Gender stayed in even though most of the roster shares one value, because on the days it does not match it narrows the field sharply. Hair colour is always the character's first appearance, so the answer does not depend on which arc you are thinking of.</p>
+<p>The order of answers is fixed rather than reshuffled each cycle. Reshuffling sounds fairer, but it allows the same fighter to turn up at the end of one cycle and the start of the next, a few days apart.</p>
+<h2>Links that keep working</h2>
+<p>A shared result or team is a short code, and the code refers to fighters by their position in a list that is never reordered. New fighters are only ever added to the end. That is why an old result link still opens the same team today, and the game's tests check that the list has not been disturbed.</p>
+<h2>What stays off the game screens</h2>
+<p>Advertising is kept to guide pages like this one and never appears on a game screen. Animation is switched off for anyone whose device asks for reduced motion, and phones keep their own native scrolling.</p>
+<p><a class="cta" href="/">Play animeVS</a></p>`,
   });
 }
 
