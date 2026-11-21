@@ -141,7 +141,8 @@ const PAGE_DATES = {
   "/guides/tier-list": "2 November 2026", "/guides/synergy": "2 November 2026", "/guides/auction-strategy": "2 November 2026",
   "/characters": "2 November 2026", "/updates": "7 November 2026",
 };
-function shell({ file, canonical, title, description, body, wide = false, active = "" }) {
+// noindex: an error page. It gets no canonical URL, no ad script, and stays out of the sitemap.
+function shell({ file, canonical, title, description, body, wide = false, active = "", noindex = false }) {
   const dated = PAGE_DATES[canonical];
   if (dated) body = body.replace(/(<h1>[\s\S]*?<\/h1>)/, `$1\n<p class="small muted" style="margin-top:-6px">Updated ${dated}</p>`);
   const full = `${title} | ${SITE.name}`;
@@ -150,15 +151,15 @@ function shell({ file, canonical, title, description, body, wide = false, active
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(full)}</title>
 <meta name="description" content="${esc(description)}">
-<link rel="canonical" href="${SITE.url}${canonical}">
+${noindex ? `<meta name="robots" content="noindex">` : `<link rel="canonical" href="${SITE.url}${canonical}">
 <meta property="og:type" content="article"><meta property="og:site_name" content="${SITE.name}">
-<meta property="og:title" content="${esc(full)}"><meta property="og:description" content="${esc(description)}"><meta property="og:url" content="${SITE.url}${canonical}">
+<meta property="og:title" content="${esc(full)}"><meta property="og:description" content="${esc(description)}"><meta property="og:url" content="${SITE.url}${canonical}">`}
 <meta name="theme-color" content="#0b0c10">
 <link rel="icon" type="image/x-icon" href="/favicon.ico"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;600&display=swap">
 <style>${CSS}</style>
-${SITE.adClient ? `<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${SITE.adClient}" crossorigin="anonymous"></script>` : ""}
+${SITE.adClient && !noindex ? `<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${SITE.adClient}" crossorigin="anonymous"></script>` : ""}
 </head><body>
 <header class="site"><div class="wrap${wide ? " wide" : ""}">
 <a class="logo" href="/">ANIME<b>VS</b></a>
@@ -175,7 +176,7 @@ ${body}
   const out = path.join(OUT, file);
   fs.mkdirSync(path.dirname(out), { recursive: true });
   fs.writeFileSync(out, html);
-  written.push({ file, canonical, words: words(body) });
+  if (!noindex) written.push({ file, canonical, words: words(body) });
 }
 const crumbs = (...items) => `<div class="crumbs">${items.map(([h, l]) => (h ? `<a href="${h}">${l}</a>` : l)).join(" / ")}</div>`;
 const table = (head, rows, cls = []) => `<div class="tablewrap"><table><thead><tr>${head.map((h) => `<th>${h}</th>`).join("")}</tr></thead><tbody>${rows.map((r) => `<tr>${r.map((c, i) => `<td${cls[i] ? ` class="${cls[i]}"` : ""}>${c}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
@@ -892,6 +893,26 @@ ${UPDATES.map(([d, t, items]) => `<h2>${esc(d)}: ${esc(t)}</h2><ul>${items.map((
 <p>Found a bug or want a fighter added? Use the Feedback button in the game, or see <a href="/contact">Contact</a>.</p>`,
   });
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// NOT FOUND
+// ═══════════════════════════════════════════════════════════════════════════
+// Vercel serves /404.html, with a real 404 status, for any address that is not a
+// file. Before this existed every mistyped or made-up URL returned the home page
+// as if it were a real page, which search engines read as endless duplicates.
+shell({
+  file: "404.html", canonical: "/404", noindex: true,
+  title: "Page not found", description: "That page does not exist on animeVS.",
+  body: `<h1>Page not found</h1>
+<p class="lede">There is nothing at this address. The link may be mistyped, or the page may have moved.</p>
+<p><a class="cta" href="/">Play animeVS</a></p>
+<h2>Looking for something?</h2>
+<ul>
+${GUIDES.map(([h, l]) => `<li><a href="${h}">${esc(l)}</a></li>`).join("\n")}
+<li><a href="/characters">Character database</a></li>
+<li><a href="/updates">Updates</a></li>
+</ul>`,
+});
 
 // ════════════════════════════════════════════════════════════════════════════
 // sitemap + robots
